@@ -1,0 +1,12 @@
+#import "webp_private/vbits"
+// Explicit native test host only; portable tests exercise the same reader with
+// ordinary array slices rather than importing raw C-host pointer arithmetic.
+#program_export
+BoolSequence :: (data: *u8, size: s64, probabilities: *u8, count: s64, output: *u8) -> s32 {
+    if size < 0 || size > 256 || count < 0 || count > 1024 { return InvalidInput }
+    bytes: [256]u8
+    for i: 0..size - 1 { bytes[i] = data[i] }
+    bits := Vp8Reader(bytes[:size])
+    for i: 0..count - 1 { output[i] = cast(u8)VRead(*bits, cast(s32)probabilities[i]) }
+    return bits.error.code
+}

@@ -1,0 +1,127 @@
+using Containers :: #import "riff"
+// Native C ABI only; no static codec symbols in this module. The engine keeps
+// its library alive until all calls using these procedure values return.
+NativeSource :: struct { bytes: *u8; size: usize; }
+NativeOptions :: struct { color_mode: s32; use_threads: s32; padding: [7]u32; }
+NativeInfo :: struct { width: u32; height: u32; loop_count: u32; background: u32; frames: u32; padding: [4]u32; }
+WebpVersionProc :: #type () -> s32 #c_call;
+WebpIntoProc :: #type (data: *u8, size: usize, output: *u8, capacity: usize, stride: s32) -> *u8 #c_call;
+WebpOptionsInitProc :: #type (options: *NativeOptions, abi: s32) -> s32 #c_call;
+WebpNewProc :: #type (data: *NativeSource, options: *NativeOptions, abi: s32) -> *void #c_call;
+WebpInfoProc :: #type (decoder: *void, info: *NativeInfo) -> s32 #c_call;
+WebpNextProc :: #type (decoder: *void, pixels: **u8, timestamp: *s32) -> s32 #c_call;
+WebpDeleteProc :: #type (decoder: *void) #c_call;
+WebpNativeApi :: struct {
+    version: WebpVersionProc
+    decode_into: WebpIntoProc
+    options_init: WebpOptionsInitProc
+    new_decoder: WebpNewProc
+    get_info: WebpInfoProc
+    next_frame: WebpNextProc
+    delete_decoder: WebpDeleteProc
+}
+#scope_file
+NativeApiValid :: (api: *WebpNativeApi) -> bool {
+    return api != null && api.version != null && api.decode_into != null && api.options_init != null &&
+           api.new_decoder != null && api.get_info != null && api.next_frame != null && api.delete_decoder != null
+}
+// VP8L's alpha-used bit is a hint. Decoded transparency must remain visible in
+// metadata even if that hint was clear; never discard or synthesize alpha.
+NativeObserveAlpha :: (pixels: *u8, width: s32, height: s32, stride: s64, token: *Cancellation) -> (has_alpha: bool, error: DecodeError) {
+    for row: 0..height - 1 {
+        error := CancellationError(token); if error.code != DecodeOK { return false, error }
+        for x: 0..width - 1 { if pixels[row * stride + x * 4 + 3] != 255 { return true, Error(DecodeOK) } }
+    }
+    return false, Error(DecodeOK)
+}
+DemuxABI :: 0x0107;
+
+NativeWrite :: (api: *WebpNativeApi, input: BorrowedBytes, probe: WebpProbeResult, output: *u8, capacity: s64, stride: s64, options: *DecodeOptions) -> DecodeError {
+    error := CancellationError(options.cancellation)
+    if error.code != DecodeOK { return error }
+    if probe.kind != WebpAnimation {
+        if api.decode_into(*input.data[0], cast(usize)input.data.count, output, cast(usize)capacity, cast(s32)stride) == null { return Error(MalformedInput) }
+        return CancellationError(options.cancellation)
+    }
+    native_options: NativeOptions
+    if api.options_init(*native_options, DemuxABI) == 0 { return Error(UnsupportedCapability) }
+    native_options.color_mode = 1; native_options.use_threads = 0
+    source := NativeSource.{*input.data[0], cast(usize)input.data.count}
+    decoder := api.new_decoder(*source, *native_options, DemuxABI)
+    if decoder == null { return Error(MalformedInput) }
+    info: NativeInfo
+    if api.get_info(decoder, *info) == 0 || info.width != cast(u32)probe.metadata.width || info.height != cast(u32)probe.metadata.height ||
+       info.frames != cast(u32)probe.metadata.frame_count { api.delete_decoder(decoder); return Error(MalformedInput) }
+    frame: *u8; timestamp: s32
+    if api.next_frame(decoder, *frame, *timestamp) == 0 || frame == null { api.delete_decoder(decoder); return Error(MalformedInput) }
+    for row: 0..probe.metadata.height - 1 {
+        error = CancellationError(options.cancellation)
+        if error.code != DecodeOK { api.delete_decoder(decoder); return error }
+        for byte: 0..cast(s64)probe.metadata.width * 4 - 1 { output[row * stride + byte] = frame[cast(s64)row * probe.metadata.width * 4 + byte] }
+    }
+    api.delete_decoder(decoder)
+    return Error(DecodeOK)
+}
+NativeOwned :: (api: *WebpNativeApi, input: BorrowedBytes, probe: WebpProbeResult, options: *DecodeOptions) -> DecodeResult {
+    result := AllocateImage(probe.metadata, options.limits, options.cancellation)
+    if !result.is_ok { return DecodeFailure(result.error) }
+    error := NativeWrite(api, input, probe, *result.image.pixels[0], result.image.pixels.count, cast(s64)probe.metadata.width * 4, options)
+    if error.code != DecodeOK { return DecodeFailure(error) }
+    if !result.metadata.has_alpha {
+        alpha, observed := NativeObserveAlpha(*result.image.pixels[0], probe.metadata.width, probe.metadata.height, cast(s64)probe.metadata.width * 4, options.cancellation)
+        if observed.code != DecodeOK { return DecodeFailure(observed) }
+        result.metadata.has_alpha = alpha
+    }
+    return result
+}
+NativeValidate :: (options: *DecodeOptions) -> DecodeError {
+    error := ValidateOptions(options)
+    if error.code != DecodeOK { return error }
+    if options.color_mode != StrictColor { return Error(UnsupportedCapability) }
+    return ValidateDecodedFrames(1, options.limits)
+}
+#scope_export
+NativeWebpCapabilities :: () -> WebpEngineCapabilities {
+    // libwebp's C ABI has no caller-enforced allocator limit or cancellation
+    // checkpoint inside a synchronous decode. Do not advertise either.
+    return WebpEngineCapabilities.{true, true, true, false, false, 1}
+}
+
+WebpNativeDecode :: (api: *WebpNativeApi, input: BorrowedBytes, options: DecodeOptions) -> DecodeResult {
+    if !NativeApiValid(api) { return DecodeFailure(Error(UnsupportedCapability)) }
+    error := NativeValidate(*options)
+    if error.code != DecodeOK { return DecodeFailure(error) }
+    probe := WebpProbe(input, options.limits)
+    if !probe.is_ok { return DecodeFailure(probe.error) }
+    if options.workers != null {
+        error = AcquireWorker(options.workers, options.cancellation)
+        if error.code != DecodeOK { return DecodeFailure(error) }
+    }
+    result := NativeOwned(api, input, probe, *options)
+    if options.workers != null { unused ReleaseWorker(options.workers) }
+    return result
+}
+WebpNativeDecodeInto :: (api: *WebpNativeApi, input: BorrowedBytes, output: OutputBuffer, options: DecodeOptions) -> WebpOutputResult {
+    result: WebpOutputResult
+    if !NativeApiValid(api) { result.error = Error(UnsupportedCapability); return result }
+    result.error = NativeValidate(*options)
+    if result.error.code != DecodeOK { return result }
+    probe := WebpProbe(input, options.limits)
+    if !probe.is_ok { result.error = probe.error; return result }
+    result.metadata = probe.metadata
+    result.error = ValidateOutput(output, probe.metadata.width, probe.metadata.height, options.limits)
+    if result.error.code != DecodeOK { return result }
+    if output.stride > 2147483647 { result.error = Error(UnsupportedCapability); return result }
+    if options.workers != null {
+        result.error = AcquireWorker(options.workers, options.cancellation)
+        if result.error.code != DecodeOK { return result }
+    }
+    result.error = NativeWrite(api, input, probe, *output.data[0], output.data.count, output.stride, *options)
+    if result.error.code == DecodeOK && !result.metadata.has_alpha {
+        alpha, observed := NativeObserveAlpha(*output.data[0], probe.metadata.width, probe.metadata.height, output.stride, options.cancellation)
+        result.metadata.has_alpha = alpha; result.error = observed
+    }
+    if options.workers != null { unused ReleaseWorker(options.workers) }
+    result.is_ok = result.error.code == DecodeOK
+    return result
+}

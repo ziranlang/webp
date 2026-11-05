@@ -1,0 +1,32 @@
+[package]
+name = "webp"
+module_roots = ["src"]
+
+[toolchain]
+git = "https://github.com/ziranlang/ziran.git"
+ref = "24c22d9f22225c4a339cac459958c89be7ceb5de"
+
+[dependencies.image_codec]
+git = "https://github.com/ziranlang/image-codec.git"
+ref = "a8767d78d0c08d5b1c1fc0bab6fcafdc7a6da930"
+
+[dependencies.libwebp]
+git = "https://github.com/webmproject/libwebp.git"
+ref = "1844042d1ca751e62e61df7617dba19c98588339"
+source = true
+
+[exports]
+facade = "src/facade.zi"
+engine = "src/engine.zi"
+riff = "src/riff.zi"
+libwebp = "src/libwebp.zi"
+dynamic = "src/dynamic.zi"
+authored_lossless = "src/authored_lossless.zi"
+authored = "src/authored.zi"
+
+[tool]
+project = "build/bin/package_tool"
+
+[artifacts.libwebp]
+inputs = ["tools/package_tool.zi", "native/artifact.sh", "native/build.sh", "native/CMakeLists.txt", "native/WebP.cmake", "Makefile"]
+outputs = ["lib/libimagewebp.a", "lib/libimagewebp.so", "resources/LICENSE-libwebp", "resources/PATENTS-libwebp"]

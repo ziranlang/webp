@@ -1,0 +1,31 @@
+using Block :: #import "webp_private/vblock"
+Mix32 :: (hash: *u64, value: s32) {
+    word := cast(u32)value
+    for i: 0..3 { <<hash = (<<hash ^ cast(u64)((word >> cast(u32)(i * 8)) & cast(u32)255)) * cast(u64)1099511628211 }
+}
+BlockHash :: (input: []u8) -> u64 {
+    header := ReadVp8Header(BorrowBytes(input), DefaultLimits(), null)
+    if !header.is_ok { return cast(u64)header.error.code }
+    columns := (header.width + 15) / 16; rows := (header.height + 15) / 16
+    if columns > 128 { return 0 }
+    modes: [512]u8; nonzero: [128]Vp8Nonzero
+    hash: u64 = 14695981039346656037
+    for y: 0..rows - 1 {
+        left_modes: [4]u8; left_nonzero: Vp8Nonzero
+        for x: 0..columns - 1 {
+            block := VReadModes(*header, modes[x * 4:x * 4 + 4], left_modes[:], null)
+            if block.error.code != DecodeOK { return cast(u64)block.error.code }
+            coefficients: [384]s16
+            error := VReadResidual(*header, *header.partitions[y & (header.partition_count - 1)], *block, *nonzero[x], *left_nonzero, coefficients[:], null)
+            if error.code != DecodeOK { return cast(u64)error.code }
+            Mix32(*hash, block.segment); Mix32(*hash, ifx block.skip then 1 else 0); Mix32(*hash, ifx block.is_i4x4 then 1 else 0)
+            count := ifx block.is_i4x4 then 16 else 1
+            for i: 0..count - 1 { Mix32(*hash, cast(s32)block.y_modes[i]) }
+            Mix32(*hash, block.uv_mode); Mix32(*hash, ifx block.has_residual then 1 else 0)
+            for i: 0..383 { Mix32(*hash, cast(s32)coefficients[i]) }
+            Mix32(*hash, cast(s32)nonzero[x].y2); Mix32(*hash, cast(s32)left_nonzero.y2)
+            for i: 0..7 { Mix32(*hash, cast(s32)nonzero[x].edges[i]); Mix32(*hash, cast(s32)left_nonzero.edges[i]) }
+        }
+    }
+    return hash
+}

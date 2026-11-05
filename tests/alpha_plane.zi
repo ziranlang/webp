@@ -1,0 +1,32 @@
+#import "webp_private/alpha_plane"
+#import "std/vec"
+#import "image_codec/buffer"
+Synthetic :: #import "lossless_portable"
+#program_export
+SelfTest :: () -> s32 {
+    writer := Synthetic.Start(3, 2)
+    Synthetic.Put(*writer, 0, 1); Synthetic.Put(*writer, 0, 1); Synthetic.Put(*writer, 0, 1)
+    Synthetic.Group(*writer, cast(u32)0x11223344)
+    count := (writer.position + 7) / 8
+    payload: [4096]u8; payload[0] = 1
+    for i: 25..count - 1 { payload[i - 24] = writer.data[i] }
+    options := DefaultOptions(); budget := NewWorkerBudget(options.limits); options.workers = *budget
+    result := ReadAlphaPlane(BorrowBytes(payload[:count - 24]), 3, 2, *options)
+    if result.error.code != DecodeOK || result.plane.storage.count != 6 || result.plane.stride != 3 || result.plane.sample_bytes != 1 { return 1 }
+    for i: 0..5 { if result.plane.storage[i] != 51 { return 2 } }
+    if budget.working_bytes != result.reserved_bytes { return 3 }
+    VecFree(result.plane.storage); unused ReleaseWorkingBytes(*budget, result.reserved_bytes)
+    if budget.working_bytes != 0 { return 4 }
+    payload[0] = 9 // compressed, vertical filter
+    filtered := ReadAlphaPlane(BorrowBytes(payload[:count - 24]), 3, 2, *options)
+    expected: [6]u8 = .[51,102,153,102,153,204]
+    if filtered.error.code != DecodeOK { return 5 }
+    for i: 0..5 { if filtered.plane.storage[i] != expected[i] { return 6 } }
+    VecFree(filtered.plane.storage); unused ReleaseWorkingBytes(*budget, filtered.reserved_bytes)
+    token: Cancellation; Cancel(*token); options.cancellation = *token
+    cancelled := ReadAlphaPlane(BorrowBytes(payload[:count - 24]), 3, 2, *options)
+    if cancelled.error.code != DecodeCancelled || cancelled.plane.storage.count != 0 || budget.working_bytes != 0 { return 7 }
+    return 0
+}
+#program_export
+main :: () -> s32 { return SelfTest() }

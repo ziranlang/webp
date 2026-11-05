@@ -1,0 +1,47 @@
+using Planes :: #import "image_codec/buffer"
+Math :: #import "vtransform"
+VYuvWord :: (y: s32, u: s32, v: s32) -> u32 {
+    luminance := (y * 19077) >> 8
+    red := Math.VClip((luminance + ((v * 26149) >> 8) - 14234) >> 6)
+    green := Math.VClip((luminance - ((u * 6419) >> 8) - ((v * 13320) >> 8) + 8708) >> 6)
+    blue := Math.VClip((luminance + ((u * 33050) >> 8) - 17685) >> 6)
+    return cast(u32)4278190080 | (cast(u32)red << cast(u32)16) | (cast(u32)green << cast(u32)8) | cast(u32)blue
+}
+VChroma :: (plane: PlaneView, top: s64, bottom: s64, left: s64, right: s64, top_weight: s32, left_weight: s32) -> s32 {
+    a := cast(s32)plane.data[top * plane.stride + left]
+    b := cast(s32)plane.data[top * plane.stride + right]
+    c := cast(s32)plane.data[bottom * plane.stride + left]
+    d := cast(s32)plane.data[bottom * plane.stride + right]
+    return (a * top_weight * left_weight + b * top_weight * (4 - left_weight) +
+            c * (4 - top_weight) * left_weight + d * (4 - top_weight) * (4 - left_weight) + 8) >> 4
+}
+// Scalar strict VP8 YUV420 -> straight RGBA8, with the reference decoder's
+// centered fancy chroma upsampling and exact fixed-point channel rounding.
+// Inputs/output are borrowed; no allocation and no padding bytes are written.
+VConvert420 :: (y: PlaneView, u: PlaneView, v: PlaneView, output: OutputBuffer, limits: DecodeLimits, token: *Cancellation) -> DecodeError {
+    if y.sample_bytes != 1 || u.sample_bytes != 1 || v.sample_bytes != 1 { return Error(UnsupportedCapability) }
+    error := ValidatePlane(y, limits); if error.code != DecodeOK { return error }
+    error = ValidatePlane(u, limits); if error.code != DecodeOK { return error }
+    error = ValidatePlane(v, limits); if error.code != DecodeOK { return error }
+    cw := cast(s32)((cast(s64)y.width + 1) / 2); ch := cast(s32)((cast(s64)y.height + 1) / 2)
+    if u.width != cw || v.width != cw || u.height != ch || v.height != ch { return Error(InvalidInput) }
+    error = ValidateOutput(output, y.width, y.height, limits); if error.code != DecodeOK { return error }
+    for row: 0..y.height - 1 {
+        error = CancellationError(token); if error.code != DecodeOK { return error }
+        top := ifx row == 0 then 0 else (row - 1) / 2
+        bottom := ifx row == 0 then 0 else ifx top + 1 < ch then top + 1 else ch - 1
+        top_weight: s32 = ifx row == 0 || (row & 1) != 0 then 3 else 1
+        for column: 0..y.width - 1 {
+            left := ifx column == 0 then 0 else (column - 1) / 2
+            right := ifx column == 0 then 0 else ifx left + 1 < cw then left + 1 else cw - 1
+            left_weight: s32 = ifx column == 0 || (column & 1) != 0 then 3 else 1
+            chroma_u := VChroma(u, top, bottom, left, right, top_weight, left_weight)
+            chroma_v := VChroma(v, top, bottom, left, right, top_weight, left_weight)
+            word := VYuvWord(cast(s32)y.data[row * y.stride + column], chroma_u, chroma_v)
+            at := row * output.stride + column * 4
+            output.data[at] = cast(u8)(word >> cast(u32)16); output.data[at + 1] = cast(u8)(word >> cast(u32)8)
+            output.data[at + 2] = cast(u8)word; output.data[at + 3] = 255
+        }
+    }
+    return Error(DecodeOK)
+}

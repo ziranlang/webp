@@ -1,0 +1,32 @@
+#import "webp_private/alpha"
+#program_export
+SelfTest :: () -> s32 {
+    values: [9]u8 = .[10,20,30,4,5,6,7,8,9]
+    expected: [36]u8 = .[
+        10,20,30,4,5,6,7,8,9,10,30,60,14,19,25,21,29,38,
+        10,30,60,14,35,66,21,43,75,10,30,60,14,39,75,21,54,99]
+    for mode: 0..3 {
+        data := values
+        if UnfilterAlpha(data[:], 3, 3, cast(s32)mode, null).code != DecodeOK { return 1 }
+        for i: 0..8 { if data[i] != expected[mode * 9 + i] { return 2 } }
+    }
+    clamp: [4]u8 = .[0,250,250,3]
+    if UnfilterAlpha(clamp[:], 2, 2, 3, null).code != DecodeOK || clamp[3] != 2 { return 3 }
+    token: Cancellation; Cancel(*token)
+    if UnfilterAlpha(values[:], 3, 3, 1, *token).code != DecodeCancelled || values[1] != 20 { return 4 }
+    if UnfilterAlpha(values[:8], 3, 3, 1, null).code != TruncatedInput || values[1] != 20 { return 5 }
+    if UnfilterAlpha(values[:], 3, 3, 4, null).code != UnsupportedCapability { return 6 }
+    payload: [10]u8 = .[16,10,20,30,4,5,6,7,8,9]
+    header := ReadAlphaHeader(BorrowBytes(payload[:]), 3, 3, DefaultLimits())
+    if header.error.code != DecodeOK || header.preprocessing != 1 || header.compression != 0 || header.residual.data.count != 9 { return 7 }
+    if ReadAlphaHeader(BorrowBytes(payload[:9]), 3, 3, DefaultLimits()).error.code != TruncatedInput { return 8 }
+    payload[0] = 64
+    if ReadAlphaHeader(BorrowBytes(payload[:]), 3, 3, DefaultLimits()).error.code != MalformedInput { return 9 }
+    payload[0] = 2
+    if ReadAlphaHeader(BorrowBytes(payload[:]), 3, 3, DefaultLimits()).error.code != UnsupportedCapability { return 10 }
+    payload[0] = 1
+    if ReadAlphaHeader(BorrowBytes(payload[:]), 3, 3, DefaultLimits()).error.code != DecodeOK { return 11 }
+    return 0
+}
+#program_export
+main :: () -> s32 { return SelfTest() }

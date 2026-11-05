@@ -1,0 +1,8 @@
+#import "vp8_block_shared"
+#program_export
+Fingerprint :: (input: *u8, size: s64) -> u64 {
+    if size < 0 || size > 65536 { return 0 }
+    bytes: [65536]u8
+    for i: 0..size - 1 { bytes[i] = input[i] }
+    return BlockHash(bytes[:size])
+}

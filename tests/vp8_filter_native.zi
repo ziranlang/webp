@@ -1,0 +1,16 @@
+#import "webp_private/vfilter"
+#program_export
+Filter :: (pixels: *u8, threshold: s32, inner: s32, hev: s32, simple: bool, internal: bool, horizontal: bool) -> s32 {
+    data: [1024]u8
+    for i: 0..1023 { data[i] = pixels[i] }
+    step: s64 = ifx horizontal then 1 else 32
+    along: s64 = ifx horizontal then 32 else 1
+    edges := ifx internal then 3 else 1
+    for edge: 0..edges - 1 {
+        at := 132 + ifx internal then (edge + 1) * 4 * step else 0
+        error := VFilterEdge(data[:], at, step, along, 16, threshold, inner, hev, simple, !internal)
+        if error.code != DecodeOK { return error.code }
+    }
+    for i: 0..1023 { pixels[i] = data[i] }
+    return DecodeOK
+}

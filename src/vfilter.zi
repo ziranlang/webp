@@ -1,0 +1,58 @@
+using Errors :: #import "image_codec/errors"
+Math :: #import "vtransform"
+VAbs :: (value: s32) -> s32 { return ifx value < 0 then -value else value }
+VSignedClip :: (value: s32, magnitude: s32) -> s32 { return ifx value < -magnitude then -magnitude else ifx value >= magnitude then magnitude - 1 else value }
+VFilterAdjust :: (data: []u8, at: s64, step: s64, taps: s32) {
+    p1 := cast(s32)data[at - 2 * step]; p0 := cast(s32)data[at - step]
+    q0 := cast(s32)data[at]; q1 := cast(s32)data[at + step]
+    a := 3 * (q0 - p0)
+    if taps != 4 { a += VSignedClip(p1 - q1, 128) }
+    if taps == 6 {
+        a = VSignedClip(a, 128)
+        a1 := (27 * a + 63) >> 7; a2 := (18 * a + 63) >> 7; a3 := (9 * a + 63) >> 7
+        data[at - 3 * step] = Math.VClip(cast(s32)data[at - 3 * step] + a3)
+        data[at - 2 * step] = Math.VClip(p1 + a2); data[at - step] = Math.VClip(p0 + a1)
+        data[at] = Math.VClip(q0 - a1); data[at + step] = Math.VClip(q1 - a2)
+        data[at + 2 * step] = Math.VClip(cast(s32)data[at + 2 * step] - a3)
+    } else {
+        a1 := VSignedClip((a + 4) >> 3, 16); a2 := VSignedClip((a + 3) >> 3, 16)
+        data[at - step] = Math.VClip(p0 + a2); data[at] = Math.VClip(q0 - a1)
+        if taps == 4 {
+            a3 := (a1 + 1) >> 1
+            data[at - 2 * step] = Math.VClip(p1 + a3); data[at + step] = Math.VClip(q1 - a3)
+        }
+    }
+}
+// One bounded strided VP8 edge. step crosses the edge; along advances to the
+// next independent pixel. The enclosing decoder selects actual macroblock or
+// inner edges. Complete validation precedes writes; no allocation is performed.
+VFilterEdge :: (data: []u8, at: s64, step: s64, along: s64, count: s32, threshold: s32, inner_threshold: s32, hev_threshold: s32, simple: bool, macroblock: bool) -> DecodeError {
+    if count < 1 || count > 16 || threshold < 0 || threshold > 255 || inner_threshold < 0 || inner_threshold > 255 || hev_threshold < 0 || hev_threshold > 255 { return Error(InvalidInput) }
+    if at < 0 || at >= data.count || step <= 0 || along <= 0 { return Error(OutputTooSmall) }
+    radius: s64 = ifx simple then 2 else 4
+    if step > at / radius { return Error(OutputTooSmall) }
+    available := data.count - 1 - at
+    if step > available / (radius - 1) { return Error(OutputTooSmall) }
+    available -= step * (radius - 1)
+    if count > 1 && along > available / (count - 1) { return Error(OutputTooSmall) }
+    for i: 0..count - 1 {
+        position := at + i * along
+        p1 := cast(s32)data[position - 2 * step]; p0 := cast(s32)data[position - step]
+        q0 := cast(s32)data[position]; q1 := cast(s32)data[position + step]
+        needed := 4 * VAbs(p0 - q0) + VAbs(p1 - q1) <= 2 * threshold + 1
+        if needed && !simple {
+            for side: 0..2 {
+                p := position - (side + 1) * step
+                q := position + side * step
+                if VAbs(cast(s32)data[p - step] - cast(s32)data[p]) > inner_threshold ||
+                   VAbs(cast(s32)data[q + step] - cast(s32)data[q]) > inner_threshold { needed = false }
+            }
+        }
+        if needed {
+            high_variance := VAbs(p1 - p0) > hev_threshold || VAbs(q1 - q0) > hev_threshold
+            taps: s32 = ifx simple || high_variance then 2 else ifx macroblock then 6 else 4
+            VFilterAdjust(data, position, step, taps)
+        }
+    }
+    return Error(DecodeOK)
+}

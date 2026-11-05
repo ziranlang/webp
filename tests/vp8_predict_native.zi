@@ -1,0 +1,9 @@
+#import "webp_private/vpredict"
+#program_export
+Predict :: (pixels: *u8, size: s32, mode: s32, has_top: bool, has_left: bool) -> s32 {
+    data: [1024]u8
+    for i: 0..1023 { data[i] = pixels[i] }
+    error := VIntraPredict(data[:], 32, 33, size, mode, has_top, has_left)
+    for i: 0..1023 { pixels[i] = data[i] }
+    return error.code
+}

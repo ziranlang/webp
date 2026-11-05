@@ -1,0 +1,15 @@
+// Format events observed while decoding, never inferred from encoder options.
+// These are diagnostic counters, not allocator/CPU/performance measurements.
+LosslessTrace :: struct {
+    streams: s64
+    transform_mask: u32
+    predictor_modes: u32
+    palette_width_bits: u32
+    cache_bits: u32
+    entropy_groups: s32
+    simple_trees: s64
+    normal_trees: s64
+    literals: s64
+    backrefs: s64
+    cache_hits: s64
+}

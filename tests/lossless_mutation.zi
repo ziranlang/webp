@@ -1,0 +1,32 @@
+#import "webp_private/authored_lossless"
+#import "image_codec/benchmark"
+#import "std/vec"
+#import "std/image"
+#import "std/file"
+#import "std/byte_text_linux"
+#import "std/stdio_linux"
+#import "std/format"
+#program_export
+main :: (argc: s32, argv: **u8) -> s32 {
+    if argc != 3 { return 90 }
+    options := WebpDefaultOptions()
+    options.limits.max_working_bytes = 16777216
+    budget := NewWorkerBudget(options.limits); options.workers = *budget
+    source := ReadBoundedFile(TextFromCString(argv[1]), options.limits.max_input_bytes, null)
+    if source.error.code != DecodeOK { return source.error.code }
+    bytes := source.data
+    trace: LosslessTrace
+    result := WebpAuthoredLosslessDecode(BorrowBytes(VecSlice(bytes, 0, bytes.count)), options, *trace)
+    if budget.active_workers != 0 || budget.working_bytes != 0 { return 91 }
+    if !result.is_ok {
+        if result.error.code == DecodeOK || result.image.pixels.count != 0 { return 92 }
+        text: Vec(u8); Append(*text, "decode error offset="); Append(*text, result.error.offset)
+        Append(*text, " streams="); Append(*text, trace.streams); Append(*text, " literals="); Append(*text, trace.literals)
+        Append(*text, " simple="); Append(*text, trace.simple_trees); Append(*text, " normal="); Append(*text, trace.normal_trees)
+        Append(*text, "\n"); unused PrintError(TextView(VecSlice(text, 0, text.count)))
+        return result.error.code
+    }
+    pixels := result.image.pixels
+    if !WriteEntireFile(TextFromCString(argv[2]), TextView(VecSlice(pixels, 0, pixels.count))) { return InputOutputFailed }
+    return 0
+}

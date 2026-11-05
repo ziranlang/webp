@@ -1,0 +1,99 @@
+using Containers :: #import "riff"
+Stream :: #import "lstream"
+using Traces :: #import "ltrace"
+
+#scope_file
+PrepareLossless :: (input: BorrowedBytes, options: *DecodeOptions) -> WebpProbeResult {
+    error := ValidateOptions(options)
+    if error.code == DecodeOK && options.color_mode != StrictColor { error = Error(UnsupportedCapability) }
+    if error.code == DecodeOK { error = ValidateDecodedFrames(1, options.limits) }
+    if error.code != DecodeOK { result: WebpProbeResult; result.error = error; return result }
+    probe := WebpProbe(input, options.limits)
+    if probe.is_ok && probe.kind != WebpLossless { probe.is_ok = false; probe.error = Error(UnsupportedCapability) }
+    return probe
+}
+ReadLossless :: (probe: WebpProbeResult, options: *DecodeOptions, trace: *LosslessTrace) -> Stream.LosslessWords {
+    bits: Stream.LosslessBits
+    bits.data = probe.payload.data[5:]
+    bits.base_offset = probe.payload_offset + 5
+    bits.trace = trace
+    return Stream.LStream(*bits, probe.metadata.width, probe.metadata.height, true, options)
+}
+DecodeOwned :: (probe: WebpProbeResult, options: *DecodeOptions, trace: *LosslessTrace) -> DecodeResult {
+    decoded := ReadLossless(probe, options, trace)
+    if decoded.error.code != DecodeOK { return DecodeFailure(decoded.error) }
+    result := AllocateImage(probe.metadata, options.limits, options.cancellation)
+    error := result.error
+    if result.is_ok {
+        for row: 0..probe.metadata.height - 1 {
+            error = CancellationError(options.cancellation)
+            if error.code != DecodeOK { break }
+            for column: 0..probe.metadata.width - 1 {
+                at := cast(s64)row * probe.metadata.width + column
+                word := decoded.words[at]
+                if (word >> cast(u32)24) != cast(u32)255 { result.metadata.has_alpha = true }
+                result.image.pixels[at * 4] = cast(u8)(word >> cast(u32)16)
+                result.image.pixels[at * 4 + 1] = cast(u8)(word >> cast(u32)8)
+                result.image.pixels[at * 4 + 2] = cast(u8)word
+                result.image.pixels[at * 4 + 3] = cast(u8)(word >> cast(u32)24)
+            }
+        }
+    }
+    VecFree(decoded.words)
+    unused ReleaseWorkingBytes(options.workers, decoded.reserved_bytes)
+    if error.code != DecodeOK { return DecodeFailure(error) }
+    return result
+}
+DecodeInto :: (probe: WebpProbeResult, output: OutputBuffer, options: *DecodeOptions, trace: *LosslessTrace) -> WebpOutputResult {
+    result: WebpOutputResult; result.metadata = probe.metadata
+    decoded := ReadLossless(probe, options, trace)
+    result.error = decoded.error
+    if result.error.code != DecodeOK { return result }
+    for row: 0..probe.metadata.height - 1 {
+        result.error = CancellationError(options.cancellation)
+        if result.error.code != DecodeOK { break }
+        for column: 0..probe.metadata.width - 1 {
+            word := decoded.words[cast(s64)row * probe.metadata.width + column]
+            if (word >> cast(u32)24) != cast(u32)255 { result.metadata.has_alpha = true }
+            at := row * output.stride + column * 4
+            output.data[at] = cast(u8)(word >> cast(u32)16)
+            output.data[at + 1] = cast(u8)(word >> cast(u32)8)
+            output.data[at + 2] = cast(u8)word
+            output.data[at + 3] = cast(u8)(word >> cast(u32)24)
+        }
+    }
+    VecFree(decoded.words)
+    unused ReleaseWorkingBytes(options.workers, decoded.reserved_bytes)
+    result.is_ok = result.error.code == DecodeOK
+    return result
+}
+
+#scope_export
+// Authored VP8L only. No native symbols or fallback. Lossy/animation return an
+// explicit capability failure. Optional trace records observed format events.
+WebpAuthoredLosslessDecode :: (input: BorrowedBytes, options: DecodeOptions, trace: *LosslessTrace = null) -> DecodeResult {
+    probe := PrepareLossless(input, *options)
+    if !probe.is_ok { return DecodeFailure(probe.error) }
+    local := NewWorkerBudget(options.limits)
+    if options.workers == null { options.workers = *local }
+    error := AcquireWorker(options.workers, options.cancellation)
+    if error.code != DecodeOK { return DecodeFailure(error) }
+    result := DecodeOwned(probe, *options, trace)
+    unused ReleaseWorker(options.workers)
+    return result
+}
+WebpAuthoredLosslessDecodeInto :: (input: BorrowedBytes, output: OutputBuffer, options: DecodeOptions, trace: *LosslessTrace = null) -> WebpOutputResult {
+    result: WebpOutputResult
+    probe := PrepareLossless(input, *options)
+    if !probe.is_ok { result.error = probe.error; return result }
+    result.metadata = probe.metadata
+    result.error = ValidateOutput(output, probe.metadata.width, probe.metadata.height, options.limits)
+    if result.error.code != DecodeOK { return result }
+    local := NewWorkerBudget(options.limits)
+    if options.workers == null { options.workers = *local }
+    result.error = AcquireWorker(options.workers, options.cancellation)
+    if result.error.code != DecodeOK { return result }
+    result = DecodeInto(probe, output, *options, trace)
+    unused ReleaseWorker(options.workers)
+    return result
+}

@@ -1,0 +1,8 @@
+using Native :: #import "libwebp"
+// The bridge is explicit until the independently authored engine has parity.
+WebpDecode :: (input: BorrowedBytes, options: DecodeOptions) -> DecodeResult {
+    return LibwebpDecode(input, options)
+}
+WebpDecodeInto :: (input: BorrowedBytes, output: OutputBuffer, options: DecodeOptions) -> WebpOutputResult {
+    return LibwebpDecodeInto(input, output, options)
+}

@@ -1,0 +1,47 @@
+using Errors :: #import "image_codec/errors"
+// Scalar VP8 boolean arithmetic reader. Normalization is deferred until the
+// next decision, so an unused lookahead byte is never required at partition end.
+Vp8Bits :: struct {
+    data: []u8
+    byte_at: s64
+    current: u8
+    remaining: s32
+    range: s32
+    value: s32
+    base_offset: s64
+    error: DecodeError
+}
+Vp8Reader :: (data: []u8, base_offset: s64 = 0) -> Vp8Bits {
+    bits: Vp8Bits; bits.data = data; bits.base_offset = base_offset; bits.range = 255
+    if data.count == 0 { bits.error = Error(TruncatedInput, base_offset); return bits }
+    bits.value = cast(s32)data[0]; bits.byte_at = 1
+    if bits.value == 255 { bits.error = Error(MalformedInput, base_offset) }
+    return bits
+}
+VRead :: (bits: *Vp8Bits, probability: s32 = 128) -> s32 {
+    if bits.error.code != DecodeOK { return 0 }
+    if probability < 0 || probability > 255 { bits.error = Error(InvalidInput); return 0 }
+    while bits.range < 128 {
+        if bits.remaining == 0 {
+            if bits.byte_at >= bits.data.count { bits.error = Error(TruncatedInput, bits.base_offset + bits.byte_at); return 0 }
+            bits.current = bits.data[bits.byte_at]; bits.byte_at += 1; bits.remaining = 8
+        }
+        bits.remaining -= 1
+        bit := cast(s32)((bits.current >> cast(u8)bits.remaining) & cast(u8)1)
+        bits.value = bits.value * 2 + bit; bits.range *= 2
+    }
+    split := 1 + (((bits.range - 1) * probability) >> 8)
+    if bits.value >= split { bits.value -= split; bits.range -= split; return 1 }
+    bits.range = split; return 0
+}
+VValue :: (bits: *Vp8Bits, count: s32) -> u32 {
+    if bits.error.code != DecodeOK { return 0 }
+    if count < 0 || count > 24 { bits.error = Error(InvalidInput); return 0 }
+    value: u32
+    for i: 0..count - 1 { value = (value << cast(u32)1) | cast(u32)VRead(bits) }
+    return value
+}
+VSigned :: (bits: *Vp8Bits, count: s32) -> s32 {
+    value := cast(s32)VValue(bits, count)
+    return ifx VRead(bits) != 0 then -value else value
+}

@@ -1,0 +1,150 @@
+using Header :: #import "vheader"
+using Transform :: #import "vtransform"
+Tables :: #import "vtables"
+
+// One keyframe macroblock. Context storage is supplied by the frame decoder;
+// these readers do not allocate or retain any input/output buffers.
+Vp8Block :: struct {
+    segment: s32
+    skip: bool
+    is_i4x4: bool
+    y_modes: [16]u8
+    uv_mode: s32
+    has_residual: bool
+    error: DecodeError
+}
+Vp8Nonzero :: struct { edges: [8]u8; y2: u8; }
+
+VReadModes :: (header: *Vp8Header, top: []u8, left: []u8, token: *Cancellation) -> Vp8Block {
+    block: Vp8Block
+    block.error = CancellationError(token)
+    if block.error.code != DecodeOK { return block }
+    if !header.is_ok || top.count < 4 || left.count < 4 { block.error = Error(InvalidInput); return block }
+    for i: 0..3 { if top[i] > 9 || left[i] > 9 { block.error = Error(InvalidInput); return block } }
+    reader := *header.reader
+    if header.update_map {
+        block.segment = ifx VRead(reader, header.segment_probabilities[0]) == 0 then VRead(reader, header.segment_probabilities[1]) else 2 + VRead(reader, header.segment_probabilities[2])
+    }
+    if header.use_skip { block.skip = VRead(reader, header.skip_probability) != 0 }
+    block.is_i4x4 = VRead(reader, 145) == 0
+    if !block.is_i4x4 {
+        mode := ifx VRead(reader, 156) != 0 then (ifx VRead(reader) != 0 then 1 else 3) else (ifx VRead(reader, 163) != 0 then 2 else 0)
+        block.y_modes[0] = cast(u8)mode
+        for i: 0..3 { top[i] = cast(u8)mode; left[i] = cast(u8)mode }
+    } else {
+        for y: 0..3 {
+            mode := cast(s32)left[y]
+            for x: 0..3 {
+                at := (cast(s32)top[x] * 10 + mode) * 9
+                mode = 0
+                if VRead(reader, cast(s32)Tables.Vp8Intra4Probabilities(at)) != 0 {
+                    mode = 1
+                    if VRead(reader, cast(s32)Tables.Vp8Intra4Probabilities(at + 1)) != 0 {
+                        mode = 2
+                        if VRead(reader, cast(s32)Tables.Vp8Intra4Probabilities(at + 2)) != 0 {
+                            if VRead(reader, cast(s32)Tables.Vp8Intra4Probabilities(at + 3)) == 0 {
+                                mode = ifx VRead(reader, cast(s32)Tables.Vp8Intra4Probabilities(at + 4)) == 0 then 3 else (ifx VRead(reader, cast(s32)Tables.Vp8Intra4Probabilities(at + 5)) == 0 then 4 else 5)
+                            } else {
+                                mode = ifx VRead(reader, cast(s32)Tables.Vp8Intra4Probabilities(at + 6)) == 0 then 6 else (ifx VRead(reader, cast(s32)Tables.Vp8Intra4Probabilities(at + 7)) == 0 then 7 else (ifx VRead(reader, cast(s32)Tables.Vp8Intra4Probabilities(at + 8)) == 0 then 8 else 9))
+                            }
+                        }
+                    }
+                }
+                top[x] = cast(u8)mode; block.y_modes[y * 4 + x] = cast(u8)mode
+            }
+            left[y] = cast(u8)mode
+        }
+    }
+    block.uv_mode = ifx VRead(reader, 142) == 0 then 0 else (ifx VRead(reader, 114) == 0 then 2 else (ifx VRead(reader, 183) != 0 then 1 else 3))
+    block.error = reader.error
+    return block
+}
+
+VCoefficientBands: [17]s32 = .[0, 1, 2, 3, 6, 4, 5, 6, 6, 6, 6, 6, 6, 6, 6, 7, 0];
+VCoefficientZigzag: [16]s32 = .[0, 1, 4, 8, 5, 2, 3, 6, 9, 12, 13, 10, 7, 11, 14, 15];
+VCategory3: [3]s32 = .[173, 148, 140];
+VCategory4: [4]s32 = .[176, 155, 140, 135];
+VCategory5: [5]s32 = .[180, 157, 141, 134, 130];
+VCategory6: [11]s32 = .[254, 254, 243, 230, 196, 177, 153, 140, 133, 130, 129];
+VProbability :: (header: *Vp8Header, kind: s32, position: s32, context: s32, decision: s32) -> s32 {
+    return cast(s32)header.coefficient_probabilities[((kind * 8 + VCoefficientBands[position]) * 3 + context) * 11 + decision]
+}
+VLargeCoefficient :: (reader: *Vp8Bits, header: *Vp8Header, kind: s32, position: s32, context: s32) -> s32 {
+    if VRead(reader, VProbability(header, kind, position, context, 3)) == 0 {
+        return ifx VRead(reader, VProbability(header, kind, position, context, 4)) == 0 then 2 else 3 + VRead(reader, VProbability(header, kind, position, context, 5))
+    }
+    if VRead(reader, VProbability(header, kind, position, context, 6)) == 0 {
+        return ifx VRead(reader, VProbability(header, kind, position, context, 7)) == 0 then 5 + VRead(reader, 159) else 7 + 2 * VRead(reader, 165) + VRead(reader, 145)
+    }
+    high := VRead(reader, VProbability(header, kind, position, context, 8))
+    category := high * 2 + VRead(reader, VProbability(header, kind, position, context, 9 + high))
+    probabilities := ifx category == 0 then VCategory3[:] else ifx category == 1 then VCategory4[:] else ifx category == 2 then VCategory5[:] else VCategory6[:]
+    value: s32
+    for i: 0..probabilities.count - 1 { value = value * 2 + VRead(reader, probabilities[i]) }
+    return value + 3 + (8 << category)
+}
+// Internal, fixed valid arguments from VReadResidual. Returns the last coded
+// position plus one, including the starting DC slot for luma AC-only blocks.
+VReadCoefficients :: (reader: *Vp8Bits, header: *Vp8Header, kind: s32, context: s32, dc_quant: s32, ac_quant: s32, first: s32, output: []s16) -> s32 {
+    position := first; ctx := context
+    while position < 16 && reader.error.code == DecodeOK {
+        if VRead(reader, VProbability(header, kind, position, ctx, 0)) == 0 { return position }
+        while VRead(reader, VProbability(header, kind, position, ctx, 1)) == 0 {
+            position += 1; ctx = 0
+            if position == 16 { return 16 }
+        }
+        value: s32 = 1; next_context: s32 = 1
+        if VRead(reader, VProbability(header, kind, position, ctx, 2)) != 0 {
+            value = VLargeCoefficient(reader, header, kind, position, ctx); next_context = 2
+        }
+        if VRead(reader) != 0 { value = -value }
+        output[VCoefficientZigzag[position]] = cast(s16)(value * (ifx position == 0 then dc_quant else ac_quant))
+        position += 1; ctx = next_context
+    }
+    return position
+}
+
+VReadResidual :: (header: *Vp8Header, reader: *Vp8Bits, block: *Vp8Block, top: *Vp8Nonzero, left: *Vp8Nonzero, coefficients: []s16, token: *Cancellation) -> DecodeError {
+    error := CancellationError(token); if error.code != DecodeOK { return error }
+    if !header.is_ok || block.error.code != DecodeOK || block.segment < 0 || block.segment > 3 { return Error(InvalidInput) }
+    if coefficients.count < 384 { return Error(OutputTooSmall) }
+    if top.y2 > 1 || left.y2 > 1 { return Error(InvalidInput) }
+    for i: 0..7 { if top.edges[i] > 1 || left.edges[i] > 1 { return Error(InvalidInput) } }
+    for i: 0..383 { coefficients[i] = 0 }
+    block.has_residual = false
+    if block.skip {
+        for i: 0..7 { top.edges[i] = 0; left.edges[i] = 0 }
+        if !block.is_i4x4 { top.y2 = 0; left.y2 = 0 }
+        return Error(DecodeOK)
+    }
+    quantizer := header.quantizers[block.segment]
+    first: s32; kind: s32 = 3
+    if !block.is_i4x4 {
+        dc: [16]s16; transformed: [16]s16
+        count := VReadCoefficients(reader, header, 1, cast(s32)top.y2 + cast(s32)left.y2, quantizer.y2_dc, quantizer.y2_ac, 0, dc[:])
+        top.y2 = ifx count > 0 then 1 else 0; left.y2 = top.y2
+        unused VInverseWHT(dc[:], transformed[:])
+        for i: 0..15 { coefficients[i * 16] = transformed[i] }
+        first = 1; kind = 0
+    }
+    for y: 0..3 {
+        for x: 0..3 {
+            at := (y * 4 + x) * 16
+            count := VReadCoefficients(reader, header, kind, cast(s32)top.edges[x] + cast(s32)left.edges[y], quantizer.y_dc, quantizer.y_ac, first, coefficients[at:at + 16])
+            top.edges[x] = ifx count > first then 1 else 0; left.edges[y] = top.edges[x]
+            block.has_residual = block.has_residual || count > first || coefficients[at] != 0
+        }
+    }
+    for plane: 0..1 {
+        error = CancellationError(token); if error.code != DecodeOK { return error }
+        for y: 0..1 {
+            for x: 0..1 {
+                at := 256 + (plane * 4 + y * 2 + x) * 16; ctx_at := 4 + plane * 2
+                count := VReadCoefficients(reader, header, 2, cast(s32)top.edges[ctx_at + x] + cast(s32)left.edges[ctx_at + y], quantizer.uv_dc, quantizer.uv_ac, 0, coefficients[at:at + 16])
+                top.edges[ctx_at + x] = ifx count > 0 then 1 else 0; left.edges[ctx_at + y] = top.edges[ctx_at + x]
+                block.has_residual = block.has_residual || count > 0
+            }
+        }
+    }
+    return reader.error
+}

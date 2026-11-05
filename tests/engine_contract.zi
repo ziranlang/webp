@@ -1,0 +1,91 @@
+#import "webp/facade"
+#import "std/vec"
+#import "std/image"
+#import "std/file"
+#import "std/stdio_linux"
+#import "std/byte_text_linux"
+
+Path :: (root: string, name: string) -> string {
+    text: Vec(u8)
+    unused BuilderAppend(text, root); unused BuilderAppend(text, "/webp/")
+    unused BuilderAppend(text, name)
+    return BuilderFinish(text)
+}
+Case :: (corpus: string, name: string, width: s32, height: s32, frames: s32) -> s32 {
+    options := WebpDefaultOptions()
+    workers := NewWorkerBudget(options.limits); options.workers = *workers
+    encoded: Vec(u8); golden: Vec(u8)
+    stem: Vec(u8); unused BuilderAppend(stem, name); unused BuilderAppend(stem, ".webp")
+    if !ReadFileInto(Path(corpus, BuilderFinish(stem)), *encoded) { return 1 }
+    raw: Vec(u8); unused BuilderAppend(raw, name); unused BuilderAppend(raw, ".rgba")
+    if !ReadFileInto(Path(corpus, BuilderFinish(raw)), *golden) { return 2 }
+    input := BorrowBytes(VecSlice(encoded, 0, encoded.count))
+    probe := WebpProbe(input, options.limits)
+    if !probe.is_ok || probe.metadata.width != width || probe.metadata.height != height || probe.metadata.frame_count != frames { return 3 }
+    decoded := WebpDecode(input, options)
+    if !decoded.is_ok { unused PrintError(ErrorText(decoded.error.code)); return 4 }
+    if !ImageValid(*decoded.image) || decoded.image.width != width || decoded.image.height != height ||
+       decoded.metadata.frame_count != frames || decoded.image.pixels.count != golden.count { return 5 }
+    for i: 0..golden.count - 1 { if decoded.image.pixels[i] != golden[i] { return 6 } }
+    if workers.active_workers != 0 || workers.peak_workers != 1 { return 7 }
+    stride := cast(s64)width * 4 + 8
+    span, span_error := RequiredSpan(width, height, 4, stride)
+    if span_error.code != DecodeOK { return 8 }
+    output: Vec(u8)
+    if !VecResize(output, span) { return 9 }
+    for i: 0..span - 1 { output[i] = 99 }
+    {
+        buffer := OutputBuffer.{VecSlice(output, 0, output.count), stride}
+        into := WebpDecodeInto(input, buffer, options)
+        if !into.is_ok || into.metadata.width != width || into.metadata.frame_count != frames { return 10 }
+    }
+    for y: 0..height - 1 {
+        for x: 0..cast(s64)width * 4 - 1 { if output[y * stride + x] != golden[cast(s64)y * width * 4 + x] { return 11 } }
+        if y < height - 1 { for x: cast(s64)width * 4..stride - 1 { if output[y * stride + x] != 99 { return 12 } } }
+    }
+    token: Cancellation; Cancel(*token); options.cancellation = *token
+    cancelled := WebpDecode(input, options)
+    if cancelled.is_ok || cancelled.error.code != DecodeCancelled || cancelled.image.pixels.count != 0 || workers.active_workers != 0 { return 13 }
+    options.cancellation = null; options.color_mode = FastColor
+    fast := WebpDecode(input, options)
+    if fast.error.code != UnsupportedCapability { return 14 }
+    options.color_mode = StrictColor
+    options.limits.max_input_bytes = encoded.count - 1
+    limited_input := WebpDecode(input, options)
+    if limited_input.error.code != LimitExceeded { return 15 }
+    options.limits.max_input_bytes = 2147483647; options.limits.max_pixels = cast(s64)width * height - 1
+    limited_pixels := WebpDecode(input, options)
+    if limited_pixels.error.code != LimitExceeded { return 16 }
+    options.limits.max_pixels = 67108864
+    if frames > 1 {
+        options.limits.max_frames = 1
+        limited_frames := WebpDecode(input, options)
+        if limited_frames.error.code != LimitExceeded { return 17 }
+    }
+    return 0
+}
+Rejected :: (corpus: string, name: string, code: s32) -> bool {
+    bytes: Vec(u8)
+    if !ReadFileInto(Path(corpus, name), *bytes) { return false }
+    result := WebpDecode(BorrowBytes(VecSlice(bytes, 0, bytes.count)), WebpDefaultOptions())
+    return !result.is_ok && result.error.code == code && result.image.pixels.count == 0
+}
+#program_export
+main :: (argc: s32, argv: **u8) -> s32 {
+    if argc != 2 { return 90 }
+    corpus := TextFromCString(argv[1])
+    capabilities := LibwebpCapabilities()
+    if !capabilities.still_images || !capabilities.first_animation_frame || !capabilities.caller_owned_output ||
+       capabilities.interrupt_native_decode || capabilities.enforces_native_scratch_limit || capabilities.max_active_workers != 1 || LibwebpVersion() <= 0 { return 91 }
+    result := Case(corpus, "lossless", 3, 2, 1)
+    if result != 0 { unused PrintError("lossless\n"); return result }
+    result = Case(corpus, "lossy", 16, 16, 1)
+    if result != 0 { unused PrintError("lossy\n"); return result }
+    result = Case(corpus, "lossy-alpha", 16, 16, 1)
+    if result != 0 { unused PrintError("lossy alpha\n"); return result }
+    result = Case(corpus, "animated", 8, 8, 2)
+    if result != 0 { unused PrintError("animated first frame\n"); return result }
+    if !Rejected(corpus, "malformed.webp", MalformedInput) || !Rejected(corpus, "truncated.webp", TruncatedInput) { return 92 }
+    if WebpDefaultOptions().limits.max_input_bytes != 2147483647 { return 93 }
+    return 0
+}

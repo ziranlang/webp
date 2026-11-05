@@ -1,0 +1,30 @@
+#import "webp_private/vbits"
+#program_export
+SelfTest :: () -> s32 {
+    data: [256]u8; probabilities: [1024]u8; output: [1024]u8
+    state: u32 = 305419896
+    for i: 0..255 { state = state * cast(u32)1664525 + cast(u32)1013904223; data[i] = cast(u8)(state >> cast(u32)24) }
+    if data[0] == 255 { data[0] = 254 }
+    for i: 0..511 {
+        state = state * cast(u32)1664525 + cast(u32)1013904223
+        probabilities[i] = cast(u8)(state >> cast(u32)24)
+    }
+    reader := Vp8Reader(data[:])
+    for i: 0..511 { output[i] = cast(u8)VRead(*reader, cast(s32)probabilities[i]) }
+    if reader.error.code != DecodeOK { return 1 }
+    hash: u64 = 14695981039346656037
+    for i: 0..511 { hash = (hash ^ cast(u64)output[i]) * cast(u64)1099511628211 }
+    if hash != cast(u64)3592687480910781054 { return 2 } // independent pinned oracle
+    invalid: [1]u8 = .[255]
+    if Vp8Reader(invalid[:]).error.code != MalformedInput || Vp8Reader(invalid[:0]).error.code != TruncatedInput { return 3 }
+    bytes: [1]u8
+    short := Vp8Reader(bytes[:], 91)
+    for i: 0..100 { unused VRead(*short) }
+    if short.error.code != TruncatedInput || short.error.offset != 92 { return 4 }
+    bits := Vp8Reader(data[:])
+    unused VRead(*bits, 256)
+    if bits.error.code != InvalidInput { return 5 }
+    return 0
+}
+#program_export
+main :: () -> s32 { return SelfTest() }

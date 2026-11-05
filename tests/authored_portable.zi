@@ -1,0 +1,64 @@
+using Codec :: #import "webp/authored"
+#import "std/image"
+#import "std/vec"
+
+ZeroFrame :: (width: s32, height: s32) -> [320]u8 {
+    data: [320]u8
+    for i: 0..3 { data[i] = "RIFF"[i]; data[8 + i] = "WEBP"[i]; data[12 + i] = "VP8 "[i] }
+    data[4] = 56; data[5] = 1; data[16] = 44; data[17] = 1
+    data[20] = 16; data[21] = 16; data[23] = 157; data[24] = 1; data[25] = 42
+    data[26] = cast(u8)width; data[27] = cast(u8)(width >> 8)
+    data[28] = cast(u8)height; data[29] = cast(u8)(height >> 8)
+    return data
+}
+ImageHash :: (image: *Image) -> u64 {
+    hash: u64 = 14695981039346656037
+    for i: 0..image.pixels.count - 1 { hash = (hash ^ cast(u64)image.pixels[i]) * cast(u64)1099511628211 }
+    return hash
+}
+Check :: (width: s32, height: s32, expected: u64) -> s32 {
+    data := ZeroFrame(width, height)
+    options := WebpDefaultOptions(); budget := NewWorkerBudget(options.limits); options.workers = *budget
+    decoded := WebpAuthoredDecode(BorrowBytes(data[:]), options)
+    if !decoded.is_ok || !ImageValid(*decoded.image) || decoded.image.width != width || decoded.image.height != height { return 1 }
+    if ImageHash(*decoded.image) != expected || decoded.image.pixels.capacity != cast(s64)width * height * 4 { return 2 }
+    if budget.working_bytes != 0 || budget.active_workers != 0 { return 3 }
+    output: Vec(u8)
+    stride := cast(s64)width * 4 + 7
+    count, error := RequiredSpan(width, height, 4, stride)
+    if error.code != DecodeOK || !VecResizeBounded(output, count, count) { return 4 }
+    for i: 0..count - 1 { output[i] = 213 }
+    {
+        result := WebpAuthoredDecodeInto(BorrowBytes(data[:]), OutputBuffer.{VecSlice(output, 0, count), stride}, options)
+        if !result.is_ok { return 5 }
+    }
+    for y: 0..height - 1 {
+        for x: 0..cast(s64)width * 4 - 1 { if output[y * stride + x] != decoded.image.pixels[cast(s64)y * width * 4 + x] { return 6 } }
+        if y + 1 < height { for x: cast(s64)width * 4..stride - 1 { if output[y * stride + x] != 213 { return 7 } } }
+    }
+    token: Cancellation; Cancel(*token); options.cancellation = *token
+    cancelled := WebpAuthoredDecode(BorrowBytes(data[:]), options)
+    if cancelled.error.code != DecodeCancelled { return 8 }
+    options.cancellation = null
+    data[30] = 128 // first boolean decision: reserved color_space=1
+    reserved := WebpAuthoredDecode(BorrowBytes(data[:]), options)
+    if reserved.error.code != UnsupportedCapability { return 10 }
+    data[30] = 0
+    options.limits.max_width = width - 1
+    if width > 1 {
+        limited := WebpAuthoredDecode(BorrowBytes(data[:]), options)
+        if limited.error.code != LimitExceeded { return 9 }
+    }
+    return 0
+}
+#program_export
+SelfTest :: () -> s32 {
+    // Fingerprints independently decoded with the pinned native oracle.
+    if Check(1, 1, cast(u64)4997458164073723406) != 0 { return 1 }
+    if Check(17, 19, cast(u64)8273581899611038708) != 0 { return 2 }
+    if Check(32, 16, cast(u64)1812877966257164581) != 0 { return 3 }
+    if Check(31, 33, cast(u64)1515396203265633076) != 0 { return 4 }
+    return 0
+}
+#program_export
+main :: () -> s32 { return SelfTest() }

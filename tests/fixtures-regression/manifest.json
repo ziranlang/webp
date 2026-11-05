@@ -1,0 +1,61 @@
+{
+  "case": "vp8-range",
+  "classification": "RFC6386 14.4/14.5 stage agrees with authored and portable C; native SIMD wraps a second-pass 16-bit sum before shifting",
+  "files": {
+    "vp8-range-authored.rgba": {
+      "bytes": 17460,
+      "sha256": "eb89081c9dd5bcc16c968fcd136db7ef55b76b888b9704b97251fb2036d7b902"
+    },
+    "vp8-range-native-c.rgba": {
+      "bytes": 17460,
+      "sha256": "eb89081c9dd5bcc16c968fcd136db7ef55b76b888b9704b97251fb2036d7b902"
+    },
+    "vp8-range-native-simd.rgba": {
+      "bytes": 17460,
+      "sha256": "10d7b7994172da4f6227dfc9af67020c85454cd54b79322c228dbe16949bf10e"
+    },
+    "vp8-range.vp8": {
+      "bytes": 1672,
+      "sha256": "5a3d9af35023d9b988c8bc17c3c406e454f7e62cbefd650cf2f051bfd1590ccb"
+    },
+    "vp8-range.webp": {
+      "bytes": 1692,
+      "sha256": "dffefdd22edc80aafb8b642aed771d96b63e2b4806de7042c4a1c33237281876"
+    }
+  },
+  "native_version_packed": 67072,
+  "observed_host": {
+    "cpu_model": "AMD Ryzen 9 9950X 16-Core Processor",
+    "machine": "x86_64",
+    "native_feature_probes": {
+      "AVX2": 1,
+      "SSE2": 1,
+      "SSE4.1": 1
+    },
+    "system": "Linux"
+  },
+  "observed_tools_sha256": {
+    "../../ziran/build/bin/ziran": "82f1ba66be1833c99ff5635f202ef2871acdd5e09379215f12924aee6091ca2f",
+    "build/bin/webp-oracle": "e9cbaa8e0eff939cc976e0f7b2c7ea574ac119f1aa5e6771a074dc01e81e6fbe",
+    "build/native/libimagewebp.a": "604fd6a80d0200692c3c0381e612d23fb3f3e90107e41408ec94d79beda76828",
+    "build/scratch/authored-mutation/scalar-oracle": "656b199b4047e7c0be2952bb9e75eedb4974b121172e32b98f2061f85349f7fb",
+    "build/scratch/authored-sanitizers/source/mutation-test": "f5fb29c5fe9883bf72d6018a2343e092bb5e29b425f9f52dce3107568286565b"
+  },
+  "pinned_libwebp_revision": "1844042d1ca751e62e61df7617dba19c98588339",
+  "primary_spec": "https://www.rfc-editor.org/rfc/rfc6386.html#section-14.4",
+  "recipe": {
+    "chunk": "VP8 ",
+    "container_offset": 175,
+    "iteration_zero_based": 3,
+    "mutated_byte": 128,
+    "original_byte": 160,
+    "payload_offset": 155,
+    "seed": "repeat-q75b'VP8 '",
+    "xor_mask": 32
+  },
+  "rights": "CC0-1.0, original generated pattern and deterministic mutation by fixture author",
+  "schema": 1,
+  "source_fixture": "tests/fixtures-vp8/repeat-q75.webp",
+  "source_manifest_sha256": "a93258461266fcab5fe3a4465462ad5c770631ec573ab20204901eefc144b72e",
+  "source_sha256": "8b664b6b5a32a4b7796d8b8a4783b24bd28324193d8795aaf1350384560e11da"
+}

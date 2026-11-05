@@ -1,0 +1,105 @@
+#import "webp_private/authored_lossless"
+#import "std/image"
+#import "std/vec"
+ImageHash :: (image: *Image) -> u64 {
+    hash: u64 = 14695981039346656037
+    for i: 0..image.pixels.count - 1 { hash = (hash ^ cast(u64)image.pixels[i]) * cast(u64)1099511628211 }
+    return hash
+}
+// Construct streams algorithmically. Goldens are compact fingerprints of the
+// independently verified binary fixtures, not generated from decoder kernels.
+Writer :: struct { data: [4096]u8; position: s32; }
+Put :: (writer: *Writer, value: u32, count: s32) {
+    for i: 0..count - 1 {
+        at := writer.position
+        writer.data[at / 8] |= cast(u8)((value >> cast(u32)i) & cast(u32)1) << cast(u8)(at % 8)
+        writer.position += 1
+    }
+}
+Set32 :: (writer: *Writer, at: s32, value: u32) { for i: 0..3 { writer.data[at + i] = cast(u8)(value >> cast(u32)(i * 8)) } }
+Start :: (width: s32, height: s32) -> Writer {
+    writer: Writer; writer.position = 25 * 8
+    for i: 0..3 { writer.data[i] = "RIFF"[i]; writer.data[8 + i] = "WEBP"[i]; writer.data[12 + i] = "VP8L"[i] }
+    writer.data[20] = 47
+    Set32(*writer, 21, cast(u32)(width - 1) | (cast(u32)(height - 1) << cast(u32)14) | cast(u32)268435456)
+    return writer
+}
+Finish :: (writer: *Writer) -> s32 {
+    bytes := (writer.position + 7) / 8
+    Set32(writer, 16, cast(u32)(bytes - 20))
+    bytes += (bytes - 20) & 1
+    Set32(writer, 4, cast(u32)(bytes - 8)); return bytes
+}
+Simple :: (writer: *Writer, first: s32, second: s32 = -1) {
+    Put(writer, 1, 1); Put(writer, ifx second < 0 then cast(u32)0 else cast(u32)1, 1)
+    wide := ifx first > 1 then 1 else 0
+    Put(writer, cast(u32)wide, 1); Put(writer, cast(u32)first, cast(s32)(1 + 7 * wide))
+    if second >= 0 { Put(writer, cast(u32)second, 8) }
+}
+Pair :: (writer: *Writer, alphabet: s32, first: s32, second: s32) {
+    Put(writer, 0, 1); Put(writer, 0, 4)
+    Put(writer, 0, 3); Put(writer, 0, 3); Put(writer, 1, 3); Put(writer, 1, 3); Put(writer, 0, 1)
+    for i: 0..alphabet - 1 { Put(writer, ifx i == first || i == second then cast(u32)1 else cast(u32)0, 1) }
+}
+Group :: (writer: *Writer, word: u32, first: s32 = -1, second: s32 = -1, distance: s32 = 0, cache_bits: s32 = 0) {
+    if first < 0 { Simple(writer, cast(s32)((word >> cast(u32)8) & cast(u32)255)) }
+    else if second < 256 { Simple(writer, first, second) }
+    else { Pair(writer, 280 + ifx cache_bits == 0 then 0 else 1 << cache_bits, first, second) }
+    Simple(writer, cast(s32)((word >> cast(u32)16) & cast(u32)255))
+    Simple(writer, cast(s32)(word & cast(u32)255)); Simple(writer, cast(s32)(word >> cast(u32)24)); Simple(writer, distance)
+}
+Check :: (writer: *Writer, expected: u64) -> bool {
+    count := Finish(writer)
+    options := WebpDefaultOptions(); budget := NewWorkerBudget(options.limits); options.workers = *budget
+    decoded := WebpAuthoredLosslessDecode(BorrowBytes(writer.data[:count]), options)
+    return decoded.is_ok && ImageHash(*decoded.image) == expected && budget.working_bytes == 0 && budget.active_workers == 0
+}
+#program_export
+SelfTest :: () -> s32 {
+    predictor := Start(9, 7)
+    Put(*predictor, 1, 1); Put(*predictor, 0, 2); Put(*predictor, 0, 3)
+    Put(*predictor, 0, 1); Group(*predictor, cast(u32)0xff000000)
+    Put(*predictor, 0, 1); Put(*predictor, 0, 1); Put(*predictor, 0, 1); Group(*predictor, cast(u32)0x00010101)
+    if !Check(*predictor, cast(u64)15449604403701728680) { return 1 }
+    color := Start(5, 3)
+    Put(*color, 1, 1); Put(*color, 1, 2); Put(*color, 0, 3)
+    Put(*color, 0, 1); Group(*color, cast(u32)0xff20c040)
+    Put(*color, 0, 1); Put(*color, 0, 1); Put(*color, 0, 1); Group(*color, cast(u32)0xffc89611)
+    if !Check(*color, cast(u64)657775392389882107) { return 2 }
+    green := Start(17, 3)
+    Put(*green, 1, 1); Put(*green, 2, 2)
+    Put(*green, 0, 1); Put(*green, 0, 1); Put(*green, 0, 1); Group(*green, cast(u32)0xb007fa12)
+    if !Check(*green, cast(u64)9848972466807429058) { return 3 }
+    sizes: [5]s32 = .[2,4,16,17,256]
+    packed: [5]s32 = .[85,228,163,16,200]
+    hashes: [5]u64 = .[12584233423842715690,14490793266345847693,12635272474979351560,3400760903876689134,12831164558386314742]
+    for i: 0..4 {
+        palette := Start(19, 3)
+        Put(*palette, 1, 1); Put(*palette, 3, 2); Put(*palette, cast(u32)(sizes[i] - 1), 8)
+        Put(*palette, 0, 1); Group(*palette, cast(u32)0x11010203)
+        Put(*palette, 0, 1); Put(*palette, 0, 1); Put(*palette, 0, 1)
+        Group(*palette, cast(u32)0xff000000 | (cast(u32)packed[i] << cast(u32)8))
+        if !Check(*palette, hashes[i]) { return 4 + cast(s32)i }
+    }
+    backref := Start(8, 1)
+    Put(*backref, 0, 1); Put(*backref, 0, 1); Put(*backref, 0, 1)
+    Group(*backref, cast(u32)0xff071409, 20, 261, 1)
+    Put(*backref, 0, 1); Put(*backref, 1, 1); Put(*backref, 0, 1)
+    if !Check(*backref, cast(u64)10101580253370103925) { return 9 }
+    cache := Start(13, 1)
+    Put(*cache, 0, 1); Put(*cache, 1, 1); Put(*cache, 4, 4); Put(*cache, 0, 1)
+    word: u32 = 0xff071409
+    slot := (word * cast(u32)0x1e35a7bd) >> cast(u32)28
+    Group(*cache, word, 20, 280 + cast(s32)slot, 0, 4)
+    Put(*cache, 0, 1); for i: 0..11 { Put(*cache, 1, 1) }
+    if !Check(*cache, cast(u64)4461766547648134718) { return 10 }
+    entropy := Start(8, 4)
+    Put(*entropy, 0, 1); Put(*entropy, 0, 1); Put(*entropy, 1, 1); Put(*entropy, 0, 3)
+    Put(*entropy, 0, 1); Group(*entropy, cast(u32)0xff000000, 0, 1)
+    Put(*entropy, 0, 1); Put(*entropy, 1, 1)
+    Group(*entropy, cast(u32)0xff173149); Group(*entropy, cast(u32)0xa4db7133)
+    if !Check(*entropy, cast(u64)18169465741899448421) { return 11 }
+    return 0
+}
+#program_export
+main :: () -> s32 { return SelfTest() }

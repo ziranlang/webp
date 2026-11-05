@@ -1,0 +1,64 @@
+#import "webp_private/authored"
+#import "image_codec/benchmark"
+#import "std/image"
+#import "std/vec"
+#import "std/byte_text_linux"
+#import "std/stdio_linux"
+#import "std/format"
+
+#program_export
+main :: (argc: s32, argv: **u8) -> s32 {
+    if argc != 3 { return 90 }
+    options := WebpDefaultOptions()
+    budget := NewWorkerBudget(options.limits); options.workers = *budget
+    source := ReadBoundedFile(TextFromCString(argv[1]), options.limits.max_input_bytes, null)
+    expected := ReadBoundedFile(TextFromCString(argv[2]), options.limits.max_output_bytes, null)
+    if source.error.code != DecodeOK || expected.error.code != DecodeOK { return 91 }
+    bytes := source.data; golden := expected.data
+    input := BorrowBytes(VecSlice(bytes, 0, bytes.count))
+    result := WebpAuthoredDecode(input, options)
+    if !result.is_ok { unused PrintError(ErrorText(result.error.code)); unused PrintError("\n"); return result.error.code }
+    if !ImageValid(*result.image) || result.image.pixels.count != golden.count || result.metadata.frame_count != 1 { return 30 }
+    for i: 0..golden.count - 1 { if result.image.pixels[i] != golden[i] { unused PrintError("pixel ");  unused PrintError(" differs\n"); return 31 } }
+    if budget.active_workers != 0 || budget.working_bytes != 0 || budget.peak_workers != 1 { return 32 }
+    peak := budget.peak_working_bytes
+    boundary_options := WebpDefaultOptions(); boundary_options.limits.max_working_bytes = peak
+    exact_budget := NewWorkerBudget(boundary_options.limits); boundary_options.workers = *exact_budget
+    exact := WebpAuthoredDecode(input, boundary_options)
+    if !exact.is_ok || exact.image.pixels.count != golden.count || exact_budget.peak_working_bytes != peak || exact_budget.working_bytes != 0 { return 41 }
+    boundary_options.limits.max_working_bytes = peak - 1
+    short_budget := NewWorkerBudget(boundary_options.limits); boundary_options.workers = *short_budget
+    short := WebpAuthoredDecode(input, boundary_options)
+    if short.error.code != LimitExceeded || short_budget.working_bytes != 0 || short_budget.active_workers != 0 || short_budget.peak_working_bytes > peak - 1 { return 42 }
+    stride := cast(s64)result.image.width * 4 + 7
+    span, error := RequiredSpan(result.image.width, result.image.height, 4, stride)
+    if error.code != DecodeOK { return 33 }
+    output: Vec(u8)
+    if !VecResize(output, span) { return 34 }
+    for i: 0..span - 1 { output[i] = 213 }
+    {
+        into := WebpAuthoredDecodeInto(input, OutputBuffer.{VecSlice(output, 0, output.count), stride}, options)
+        if !into.is_ok || into.metadata.width != result.image.width { return 35 }
+    }
+    for y: 0..result.image.height - 1 {
+        for x: 0..cast(s64)result.image.width * 4 - 1 {
+            if output[y * stride + x] != golden[cast(s64)y * result.image.width * 4 + x] { return 36 }
+        }
+        if y + 1 < result.image.height {
+            for x: cast(s64)result.image.width * 4..stride - 1 { if output[y * stride + x] != 213 { return 37 } }
+        }
+    }
+    token: Cancellation; Cancel(*token); options.cancellation = *token
+    cancelled := WebpAuthoredDecode(input, options)
+    if cancelled.is_ok || cancelled.error.code != DecodeCancelled || budget.active_workers != 0 || budget.working_bytes != 0 { return 38 }
+    options.cancellation = null
+    options.color_mode = FastColor
+    fast := WebpAuthoredDecode(input, options)
+    if fast.error.code != UnsupportedCapability { return 39 }
+    options.color_mode = StrictColor
+    options.limits.max_working_bytes = 1
+    tiny := NewWorkerBudget(options.limits); options.workers = *tiny
+    limited := WebpAuthoredDecode(input, options)
+    if limited.is_ok || limited.error.code != LimitExceeded || tiny.active_workers != 0 || tiny.working_bytes != 0 { return 40 }
+    return 0
+}

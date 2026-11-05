@@ -1,0 +1,181 @@
+using Blocks :: #import "vblock"
+using Prediction :: #import "vpredict"
+using Filtering :: #import "vfilter"
+using Color :: #import "vcolor"
+#import "std/vec"
+
+// Private owned YUV scratch, not a second public pixel type. One bounded
+// backing also holds borrowed mode/nonzero contexts and per-MB filter flags.
+Vp8Frame :: struct {
+    storage: Vec(u8)
+    width: s32
+    height: s32
+    y_stride: s64
+    uv_stride: s64
+    y_base: s64
+    u_base: s64
+    v_base: s64
+    reserved_bytes: s64
+    error: DecodeError
+}
+VFrameFailure :: (error: DecodeError) -> Vp8Frame { result: Vp8Frame; result.error = error; return result }
+
+VReconstruct :: (pixels: []u8, stride: s64, at: s64, size: s32, block: *Vp8Block, coefficients: []s16, mb_x: s32, mb_y: s32, columns: s32) -> DecodeError {
+    error: DecodeError
+    if size == 16 && block.is_i4x4 {
+        right: [4]u8
+        for i: 0..3 { right[i] = pixels[at - stride + (ifx mb_y > 0 && mb_x + 1 == columns then 15 else 16 + i)] }
+        for row: 0..3 { for i: 0..3 { pixels[at + (row * 4 - 1) * stride + 16 + i] = right[i] } }
+        for index: 0..15 {
+            position := at + (index / 4) * 4 * stride + (index % 4) * 4
+            error = VIntraPredict(pixels, stride, position, 4, cast(s32)block.y_modes[index])
+            if error.code != DecodeOK { return error }
+            error = VInverseDCT(coefficients[index * 16:index * 16 + 16], pixels[position:], stride)
+            if error.code != DecodeOK { return error }
+        }
+    } else {
+        mode := ifx size == 16 then cast(s32)block.y_modes[0] else block.uv_mode
+        error = VIntraPredict(pixels, stride, at, size, mode, mb_y > 0, mb_x > 0)
+        if error.code != DecodeOK { return error }
+        blocks := size / 4
+        for index: 0..blocks * blocks - 1 {
+            position := at + (index / blocks) * 4 * stride + (index % blocks) * 4
+            error = VInverseDCT(coefficients[index * 16:index * 16 + 16], pixels[position:], stride)
+            if error.code != DecodeOK { return error }
+        }
+    }
+    return Error(DecodeOK)
+}
+
+VFilterMacroblock :: (data: []u8, at: s64, stride: s64, size: s32, mb_x: s32, mb_y: s32, inner: bool, simple: bool, threshold: s32, inner_threshold: s32, hev: s32) -> DecodeError {
+    error: DecodeError
+    if mb_x > 0 {
+        error = VFilterEdge(data, at, 1, stride, size, threshold + 4, inner_threshold, hev, simple, true)
+        if error.code != DecodeOK { return error }
+    }
+    if inner {
+        for x: 1..size / 4 - 1 {
+            error = VFilterEdge(data, at + x * 4, 1, stride, size, threshold, inner_threshold, hev, simple, false)
+            if error.code != DecodeOK { return error }
+        }
+    }
+    if mb_y > 0 {
+        error = VFilterEdge(data, at, stride, 1, size, threshold + 4, inner_threshold, hev, simple, true)
+        if error.code != DecodeOK { return error }
+    }
+    if inner {
+        for y: 1..size / 4 - 1 {
+            error = VFilterEdge(data, at + y * 4 * stride, stride, 1, size, threshold, inner_threshold, hev, simple, false)
+            if error.code != DecodeOK { return error }
+        }
+    }
+    return Error(DecodeOK)
+}
+
+ReadVp8FrameInner :: (input: BorrowedBytes, options: *DecodeOptions, base_offset: s64) -> Vp8Frame {
+    header := ReadVp8Header(input, options.limits, options.cancellation, base_offset)
+    if !header.is_ok { return VFrameFailure(header.error) }
+    // RFC6386 9.2 defines only color_space=0; do not render reserved color
+    // semantics as though they were the implemented BT.601 conversion.
+    if header.color_space { return VFrameFailure(Error(UnsupportedCapability, base_offset + 10)) }
+    columns := (header.width + 15) / 16; rows := (header.height + 15) / 16
+    y_stride := cast(s64)columns * 16 + 32; uv_stride := cast(s64)columns * 8 + 16
+    y_count := y_stride * (cast(s64)rows * 16 + 1); uv_count := uv_stride * (cast(s64)rows * 8 + 1)
+    y_base := y_stride + 16; u_base := y_count + uv_stride + 8; v_base := u_base + uv_count
+    context_at := y_count + 2 * uv_count; filter_at := context_at + cast(s64)columns * 13
+    total := filter_at + cast(s64)columns * rows
+    error := ReserveWorkingBytes(options.workers, total, options.cancellation)
+    if error.code != DecodeOK { return VFrameFailure(error) }
+    storage: Vec(u8)
+    if !VecResizeBounded(storage, total, total) { return VFrameFailure(Error(AllocationFailed)) }
+    {
+    pixels := VecSlice(storage, 0, total)
+    for i: 0..y_stride - 1 { pixels[i] = 127 }
+    for row: 1..cast(s64)rows * 16 { pixels[row * y_stride + 15] = 129 }
+    for plane: 0..1 {
+        begin := y_count + plane * uv_count
+        for i: 0..uv_stride - 1 { pixels[begin + i] = 127 }
+        for row: 1..cast(s64)rows * 8 { pixels[begin + row * uv_stride + 7] = 129 }
+    }
+    for y: 0..rows - 1 {
+        left_modes: [4]u8; left_nz: Vp8Nonzero
+        for x: 0..columns - 1 {
+            error = CancellationError(options.cancellation); if error.code != DecodeOK { return VFrameFailure(error) }
+            context := context_at + cast(s64)x * 13
+            block := VReadModes(*header, pixels[context:context + 4], left_modes[:], options.cancellation)
+            if block.error.code != DecodeOK { return VFrameFailure(block.error) }
+            top_nz: Vp8Nonzero; top_nz.y2 = pixels[context + 12]
+            for i: 0..7 { top_nz.edges[i] = pixels[context + 4 + i] }
+            coefficients: [384]s16
+            error = VReadResidual(*header, *header.partitions[y & (header.partition_count - 1)], *block, *top_nz, *left_nz, coefficients[:], options.cancellation)
+            if error.code != DecodeOK { return VFrameFailure(error) }
+            for i: 0..7 { pixels[context + 4 + i] = top_nz.edges[i] }
+            pixels[context + 12] = top_nz.y2
+            pixels[filter_at + cast(s64)y * columns + x] = cast(u8)(block.segment | (ifx block.is_i4x4 then 4 else 0) | (ifx block.has_residual then 8 else 0))
+            error = VReconstruct(pixels, y_stride, y_base + cast(s64)y * 16 * y_stride + x * 16, 16, *block, coefficients[:256], cast(s32)x, cast(s32)y, columns)
+            if error.code != DecodeOK { return VFrameFailure(error) }
+            for plane: 0..1 {
+                base := ifx plane == 0 then u_base else v_base
+                error = VReconstruct(pixels, uv_stride, base + cast(s64)y * 8 * uv_stride + x * 8, 8, *block, coefficients[256 + plane * 64:320 + plane * 64], cast(s32)x, cast(s32)y, columns)
+                if error.code != DecodeOK { return VFrameFailure(error) }
+            }
+        }
+    }
+    if header.filter_level > 0 {
+        for y: 0..rows - 1 {
+            error = CancellationError(options.cancellation); if error.code != DecodeOK { return VFrameFailure(error) }
+            for x: 0..columns - 1 {
+                flags := pixels[filter_at + cast(s64)y * columns + x]
+                segment := cast(s32)(flags & cast(u8)3); i4 := (flags & cast(u8)4) != cast(u8)0
+                level := ifx header.segmentation then header.segment_filter[segment] else header.filter_level
+                if header.segmentation && !header.absolute_segments { level += header.filter_level }
+                if header.filter_delta { level += header.reference_delta[0]; if i4 { level += header.mode_delta[0] } }
+                level = ifx level < 0 then 0 else ifx level > 63 then 63 else level
+                if level > 0 {
+                    inner_level := level
+                    if header.sharpness > 0 {
+                        inner_level >>= ifx header.sharpness > 4 then 2 else 1
+                        if inner_level > 9 - header.sharpness { inner_level = 9 - header.sharpness }
+                    }
+                    if inner_level < 1 { inner_level = 1 }
+                    threshold := 2 * level + inner_level
+                    hev: s32 = ifx level >= 40 then 2 else ifx level >= 15 then 1 else 0
+                    inner := i4 || (flags & cast(u8)8) != cast(u8)0
+                    error = VFilterMacroblock(pixels, y_base + cast(s64)y * 16 * y_stride + x * 16, y_stride, 16, cast(s32)x, cast(s32)y, inner, header.simple_filter, threshold, inner_level, hev)
+                    if error.code != DecodeOK { return VFrameFailure(error) }
+                    if !header.simple_filter {
+                        for plane: 0..1 {
+                            base := ifx plane == 0 then u_base else v_base
+                            error = VFilterMacroblock(pixels, base + cast(s64)y * 8 * uv_stride + x * 8, uv_stride, 8, cast(s32)x, cast(s32)y, inner, false, threshold, inner_level, hev)
+                            if error.code != DecodeOK { return VFrameFailure(error) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    }
+    return Vp8Frame.{storage, header.width, header.height, y_stride, uv_stride, y_base, u_base, v_base, total, Error(DecodeOK)}
+}
+ReadVp8Frame :: (input: BorrowedBytes, options: *DecodeOptions, base_offset: s64 = 0) -> Vp8Frame {
+    if options == null || options.workers == null { return VFrameFailure(Error(InvalidInput)) }
+    before := options.workers.working_bytes
+    result := ReadVp8FrameInner(input, options, base_offset)
+    unused ReleaseWorkingBytes(options.workers, options.workers.working_bytes - before - result.reserved_bytes)
+    return result
+}
+ConvertVp8Frame :: (frame: *Vp8Frame, output: OutputBuffer, options: *DecodeOptions) -> DecodeError {
+    if frame.error.code != DecodeOK { return frame.error }
+    storage: Vec(u8); VecSwap(storage, frame.storage)
+    error: DecodeError
+    {
+    data := VecSlice(storage, 0, storage.count)
+    y := PlaneView.{frame.width, frame.height, frame.y_stride, 1, data[frame.y_base:]}
+    cw := (frame.width + 1) / 2; ch := (frame.height + 1) / 2
+    u := PlaneView.{cw, ch, frame.uv_stride, 1, data[frame.u_base:]}
+    v := PlaneView.{cw, ch, frame.uv_stride, 1, data[frame.v_base:]}
+    error = VConvert420(y, u, v, output, options.limits, options.cancellation)
+    }
+    VecSwap(storage, frame.storage)
+    return error
+}

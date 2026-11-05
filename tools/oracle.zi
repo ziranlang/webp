@@ -1,0 +1,26 @@
+#import "webp/facade"
+#import "image_codec/benchmark"
+#import "std/vec"
+#import "std/image"
+#import "std/file"
+#import "std/byte_text_linux"
+#import "std/stdio_linux"
+#import "std/format"
+#program_export
+main :: (argc: s32, argv: **u8) -> s32 {
+    if argc == 2 && TextFromCString(argv[1]) == "--version" {
+        text: Vec(u8); Append(*text, cast(s64)LibwebpVersion()); Append(*text, "\n")
+        unused WriteOutput(TextView(VecSlice(text, 0, text.count))); return 0
+    }
+    if argc != 3 { unused PrintError("usage: webp-oracle INPUT OUTPUT.rgba\n"); return 2 }
+    options := WebpDefaultOptions()
+    budget := NewWorkerBudget(options.limits); options.workers = *budget
+    file := ReadBoundedFile(TextFromCString(argv[1]), options.limits.max_input_bytes, null)
+    if file.error.code != DecodeOK { unused PrintError(ErrorText(file.error.code)); return file.error.code }
+    bytes := file.data
+    result := WebpDecode(BorrowBytes(VecSlice(bytes, 0, bytes.count)), options)
+    if !result.is_ok { unused PrintError(ErrorText(result.error.code)); unused PrintError("\n"); return result.error.code }
+    rgba := result.image.pixels
+    if !WriteEntireFile(TextFromCString(argv[2]), TextView(VecSlice(rgba, 0, rgba.count))) { return InputOutputFailed }
+    return 0
+}

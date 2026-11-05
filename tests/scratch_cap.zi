@@ -1,0 +1,26 @@
+#import "webp_private/lstream"
+#import "std/vec"
+Synthetic :: #import "lossless_portable"
+#program_export
+ScratchProbe :: (maximum: s64, cancelled: bool) -> s64 {
+    // Palette expansion keeps source/palette/output buffers concurrently live.
+    // No file reads or RGBA image allocation occur: every native heap request
+    // in this probe is decoder scratch, observable by the C test host.
+    writer := Synthetic.Start(19, 3)
+    Synthetic.Put(*writer, 1, 1); Synthetic.Put(*writer, 3, 2); Synthetic.Put(*writer, 3, 8)
+    Synthetic.Put(*writer, 0, 1); Synthetic.Group(*writer, cast(u32)0x11010203)
+    Synthetic.Put(*writer, 0, 1); Synthetic.Put(*writer, 0, 1); Synthetic.Put(*writer, 0, 1)
+    Synthetic.Group(*writer, cast(u32)0xff00e400)
+    count := (writer.position + 7) / 8
+    bits: LosslessBits; bits.data = writer.data[25:count]
+    options := DefaultOptions(); options.limits.max_working_bytes = maximum
+    budget := NewWorkerBudget(options.limits); options.workers = *budget
+    token: Cancellation
+    if cancelled { Cancel(*token); options.cancellation = *token }
+    result := LStream(*bits, 19, 3, true, *options)
+    code := result.error.code
+    if code == DecodeOK && result.words.count != 57 { code = CorrectnessMismatch }
+    VecFree(result.words); unused ReleaseWorkingBytes(*budget, result.reserved_bytes)
+    if budget.working_bytes != 0 { return -100 }
+    return ifx code == DecodeOK then budget.peak_working_bytes else -cast(s64)code
+}

@@ -1,0 +1,14 @@
+#import "webp_private/vcolor"
+#program_export
+Convert :: (ys: *u8, us: *u8, vs: *u8, rgba: *u8, width: s32, height: s32) -> s32 {
+    if width < 1 || width > 33 || height < 1 || height > 16 { return InvalidInput }
+    y: [2048]u8; u: [1024]u8; v: [1024]u8; output: [4096]u8
+    for i: 0..2047 { y[i] = ys[i] }
+    for i: 0..1023 { u[i] = us[i]; v[i] = vs[i] }
+    for i: 0..4095 { output[i] = rgba[i] }
+    cw := (width + 1) / 2; ch := (height + 1) / 2
+    error := VConvert420(PlaneView.{width,height,64,1,y[:]}, PlaneView.{cw,ch,32,1,u[:]}, PlaneView.{cw,ch,32,1,v[:]},
+                         OutputBuffer.{output[:],cast(s64)width * 4 + 5}, DefaultLimits(), null)
+    for i: 0..4095 { rgba[i] = output[i] }
+    return error.code
+}

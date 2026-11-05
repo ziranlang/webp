@@ -1,0 +1,25 @@
+using Header :: #import "webp_private/vheader"
+Mix32 :: (hash: *u64, value: s32) {
+    word := cast(u32)value
+    for i: 0..3 { <<hash = (<<hash ^ cast(u64)((word >> cast(u32)(i * 8)) & cast(u32)255)) * cast(u64)1099511628211 }
+}
+HeaderHash :: (header: *Vp8Header) -> u64 {
+    hash: u64 = 14695981039346656037
+    Mix32(*hash, header.width); Mix32(*hash, header.height); Mix32(*hash, header.profile)
+    Mix32(*hash, ifx header.color_space then 1 else 0); Mix32(*hash, ifx header.clamp_type then 1 else 0)
+    Mix32(*hash, header.partition_count); Mix32(*hash, ifx header.segmentation then 1 else 0)
+    Mix32(*hash, ifx header.update_map then 1 else 0); Mix32(*hash, ifx header.absolute_segments then 1 else 0)
+    for i: 0..3 { Mix32(*hash, header.segment_quant[i]); Mix32(*hash, header.segment_filter[i]) }
+    for i: 0..2 { Mix32(*hash, header.segment_probabilities[i]) }
+    Mix32(*hash, ifx header.simple_filter then 1 else 0); Mix32(*hash, header.filter_level); Mix32(*hash, header.sharpness)
+    Mix32(*hash, ifx header.filter_delta then 1 else 0)
+    for i: 0..3 { Mix32(*hash, header.reference_delta[i]); Mix32(*hash, header.mode_delta[i]) }
+    for i: 0..3 {
+        Mix32(*hash, header.quantizers[i].y_dc); Mix32(*hash, header.quantizers[i].y_ac)
+        Mix32(*hash, header.quantizers[i].y2_dc); Mix32(*hash, header.quantizers[i].y2_ac)
+        Mix32(*hash, header.quantizers[i].uv_dc); Mix32(*hash, header.quantizers[i].uv_ac)
+    }
+    for i: 0..1055 { Mix32(*hash, cast(s32)header.coefficient_probabilities[i]) }
+    Mix32(*hash, ifx header.use_skip then 1 else 0); Mix32(*hash, header.skip_probability)
+    return hash
+}

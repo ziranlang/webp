@@ -1,0 +1,45 @@
+using Images :: #import "image_codec/api"
+AlphaHeader :: struct { compression: s32; filter: s32; preprocessing: s32; residual: BorrowedBytes; error: DecodeError; }
+ReadAlphaHeader :: (input: BorrowedBytes, width: s32, height: s32, limits: DecodeLimits) -> AlphaHeader {
+    result: AlphaHeader
+    result.error = ValidateDimensions(width, height, limits)
+    if result.error.code != DecodeOK { return result }
+    if input.data.count < 1 { result.error = Error(TruncatedInput); return result }
+    flags := cast(s32)input.data[0]
+    if (flags & 192) != 0 { result.error = Error(MalformedInput); return result }
+    result.compression = flags & 3; result.filter = (flags >> 2) & 3; result.preprocessing = (flags >> 4) & 3
+    if result.compression > 1 || result.preprocessing > 1 { result.error = Error(UnsupportedCapability); return result }
+    count := cast(s64)width * height
+    if result.compression == 0 {
+        if input.data.count - 1 < count { result.error = Error(TruncatedInput); return result }
+        if input.data.count - 1 != count { result.error = Error(MalformedInput); return result }
+    } else if input.data.count < 2 { result.error = Error(TruncatedInput); return result }
+    result.residual = BorrowBytes(input.data[1:]); result.error = Error(DecodeOK)
+    return result
+}
+// In-place scalar inverse filter of a tightly packed alpha plane. No allocation.
+// Even vertical/gradient filters use horizontal prediction on the first row;
+// the first column of subsequent rows always uses the pixel above.
+UnfilterAlpha :: (data: []u8, width: s32, height: s32, filter: s32, token: *Cancellation) -> DecodeError {
+    if width <= 0 || height <= 0 { return Error(InvalidInput) }
+    if filter < 0 || filter > 3 { return Error(UnsupportedCapability) }
+    if data.count < cast(s64)width * height { return Error(TruncatedInput) }
+    for y: 0..height - 1 {
+        error := CancellationError(token); if error.code != DecodeOK { return error }
+        for x: 0..width - 1 {
+            at := cast(s64)y * width + x; prediction: s32
+            if filter != 0 {
+                if y == 0 { if x != 0 { prediction = cast(s32)data[at - 1] } }
+                else if x == 0 { prediction = cast(s32)data[at - width] }
+                else if filter == 1 { prediction = cast(s32)data[at - 1] }
+                else if filter == 2 { prediction = cast(s32)data[at - width] }
+                else {
+                    prediction = cast(s32)data[at - 1] + cast(s32)data[at - width] - cast(s32)data[at - width - 1]
+                    if prediction < 0 { prediction = 0 }; if prediction > 255 { prediction = 255 }
+                }
+            }
+            data[at] = cast(u8)((cast(s32)data[at] + prediction) & 255)
+        }
+    }
+    return Error(DecodeOK)
+}

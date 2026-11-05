@@ -1,0 +1,105 @@
+using Bits :: #import "lbits"
+// Canonical reference tree. Fixed storage and pointer reads avoid allocation
+// or copying a table for each decoded symbol. Five trees form one image group.
+LosslessTree :: struct { counts: [16]s32; symbols: [2328]s32; single: s32; }
+LosslessGroup :: struct { trees: [5]LosslessTree; }
+LengthOrder: [19]s32 = .[17,18,0,1,2,3,4,5,16,6,7,8,9,10,11,12,13,14,15];
+LBuildTree :: (lengths: []s32, tree: *LosslessTree) -> bool {
+    if lengths.count <= 0 || lengths.count > 2328 { return false }
+    for i: 0..15 { tree.counts[i] = 0 }
+    tree.single = -1
+    used: s32; sole: s32
+    for i: 0..lengths.count - 1 {
+        length := lengths[i]
+        if length < 0 || length > 15 { return false }
+        tree.counts[length] += 1
+        if length != 0 { used += 1; sole = cast(s32)i }
+    }
+    if used == 0 { return false }
+    if used == 1 {
+        if lengths[sole] != 1 { return false }
+        tree.single = sole; return true
+    }
+    left: s32 = 1
+    for length: 1..15 { left = left * 2 - tree.counts[length]; if left < 0 { return false } }
+    if left != 0 { return false }
+    offsets: [16]s32
+    for length: 1..14 { offsets[length + 1] = offsets[length] + tree.counts[length] }
+    for i: 0..lengths.count - 1 {
+        length := lengths[i]
+        if length != 0 { tree.symbols[offsets[length]] = cast(s32)i; offsets[length] += 1 }
+    }
+    return true
+}
+LSymbol :: (bits: *LosslessBits, tree: *LosslessTree) -> s32 {
+    if bits.error.code != DecodeOK { return -1 }
+    if tree.single >= 0 { return tree.single }
+    code: s32; first: s32; index: s32
+    for length: 1..15 {
+        code |= cast(s32)LRead(bits, 1)
+        if bits.error.code != DecodeOK { return -1 }
+        count := tree.counts[length]
+        if code >= first && code - first < count { return tree.symbols[index + code - first] }
+        index += count; first = (first + count) * 2; code *= 2
+    }
+    LFail(bits, MalformedInput); return -1
+}
+LReadTree :: (bits: *LosslessBits, alphabet: s32, tree: *LosslessTree) -> bool {
+    if alphabet <= 0 || alphabet > 2328 { LFail(bits, MalformedInput); return false }
+    lengths: [2328]s32
+    if LRead(bits, 1) != cast(u32)0 {
+        if bits.trace != null { bits.trace.simple_trees += 1 }
+        count := cast(s32)LRead(bits, 1) + 1
+        wide := cast(s32)LRead(bits, 1)
+        first := cast(s32)LRead(bits, 1 + 7 * wide)
+        if first >= alphabet { LFail(bits, MalformedInput); return false }
+        lengths[first] = 1
+        if count == 2 {
+            second := cast(s32)LRead(bits, 8)
+            if second >= alphabet { LFail(bits, MalformedInput); return false }
+            lengths[second] = 1 // repeated symbol is permitted by the format
+        }
+    } else {
+        if bits.trace != null { bits.trace.normal_trees += 1 }
+        count := cast(s32)LRead(bits, 4) + 4
+        code_lengths: [19]s32
+        for i: 0..count - 1 { code_lengths[LengthOrder[i]] = cast(s32)LRead(bits, 3) }
+        codes: LosslessTree
+        if !LBuildTree(code_lengths[:], *codes) { LFail(bits, MalformedInput); return false }
+        maximum := alphabet
+        if LRead(bits, 1) != cast(u32)0 {
+            width := cast(s32)LRead(bits, 3) * 2 + 2
+            maximum = cast(s32)LRead(bits, width) + 2
+            if maximum > alphabet { LFail(bits, MalformedInput); return false }
+        }
+        at: s32; previous: s32 = 8
+        // maximum counts encoded length symbols, not expanded repeat slots.
+        while at < alphabet && maximum > 0 && bits.error.code == DecodeOK {
+            maximum -= 1
+            length := LSymbol(bits, *codes)
+            if length < 0 { return false }
+            if length < 16 {
+                lengths[at] = length; at += 1
+                if length != 0 { previous = length }
+            } else {
+                repeat: s32; value: s32
+                if length == 16 { repeat = cast(s32)LRead(bits, 2) + 3; value = previous }
+                else if length == 17 { repeat = cast(s32)LRead(bits, 3) + 3 }
+                else if length == 18 { repeat = cast(s32)LRead(bits, 7) + 11 }
+                else { LFail(bits, MalformedInput); return false }
+                if repeat > alphabet - at { LFail(bits, MalformedInput); return false }
+                for i: 0..repeat - 1 { lengths[at] = value; at += 1 }
+            }
+        }
+    }
+    if bits.error.code != DecodeOK { return false }
+    if !LBuildTree(lengths[:alphabet], tree) { LFail(bits, MalformedInput); return false }
+    return true
+}
+LPrefix :: (bits: *LosslessBits, code: s32) -> s32 {
+    if code < 0 || code >= 40 { LFail(bits, MalformedInput); return 0 }
+    if code < 4 { return code + 1 }
+    extra := (code - 2) / 2
+    base := (2 + (code & 1)) << extra
+    return base + cast(s32)LRead(bits, extra) + 1
+}

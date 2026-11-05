@@ -1,0 +1,7 @@
+macroblock=(4,2) subblock=18 first_pass_min=-81 max=29059 RFC_matches_C=1 RFC_matches_SIMD=0 coeffs=-48,0,50,29000,0,0,25,25,0,0,0,0,-25,0,0,50
+second_pass_sums_with_rounder=15750,-38107,37827,-15702,15718,-37896,37748,-15614,15682,-38072,37844,-15762,15650,-37861,37765,-15674
+RFC_pixels_with_prediction128=255,0,255,0,255,0,255,0,255,0,255,0,255,0,255,0
+SIMD_pixels_with_prediction128=255,255,0,0,255,255,0,0,255,255,0,0,255,255,0,0
+Authored_matches_independent_RFC=1 uv_ac_quantizer=25 coded_coefficient=1160
+
+independent differing DCT blocks=1; actual feature probes SSE2=1 SSE4.1=1 AVX2=1

@@ -1,0 +1,68 @@
+#import "webp_private/facade"
+#import "webp_private/authored_lossless"
+Still :: #import "webp_private/authored"
+#import "image_codec/benchmark"
+#import "std/byte_text_linux"
+#import "std/number_text"
+#import "std/stdio_linux"
+#import "std/file"
+#import "std/json_document"
+#import "std/format"
+
+NativeProvider :: (input: BorrowedBytes, metadata: ImageMetadata, options: *DecodeOptions) -> DecodeResult {
+    return WebpDecode(input, <<options)
+}
+AuthoredProvider :: (input: BorrowedBytes, metadata: ImageMetadata, options: *DecodeOptions) -> DecodeResult {
+    return WebpAuthoredLosslessDecode(input, <<options)
+}
+AuthoredStillProvider :: (input: BorrowedBytes, metadata: ImageMetadata, options: *DecodeOptions) -> DecodeResult {
+    return Still.WebpAuthoredDecode(input, <<options)
+}
+Positive :: (text: string) -> s32 {
+    number, used := IntegerPrefix(text)
+    if used != text.count || used == 0 || number <= 0 || number > 2147483647 { return 0 }
+    return cast(s32)number
+}
+#program_export
+main :: (argc: s32, argv: **u8) -> s32 {
+    if argc < 6 || argc > 9 {
+        unused PrintError("usage: webp-bench INPUT GOLDEN.rgba WIDTH HEIGHT REPORT.json [ITERATIONS] [libwebp|authored-vp8l|authored-still] [ZIRAN_VERSION]\n")
+        return 2
+    }
+    width := Positive(TextFromCString(argv[3])); height := Positive(TextFromCString(argv[4]))
+    iterations: s32 = 7
+    if argc >= 7 { iterations = Positive(TextFromCString(argv[6])) }
+    if width <= 0 || height <= 0 || iterations <= 0 || iterations > MaxBenchmarkIterations { return 2 }
+    engine := "libwebp"; version: string
+    if argc >= 8 { engine = TextFromCString(argv[7]) }
+    if argc >= 9 { version = TextFromCString(argv[8]) }
+    provider: DecodeProcedure = NativeProvider
+    if engine == "authored-vp8l" { provider = AuthoredProvider }
+    else if engine == "authored-still" { provider = AuthoredStillProvider }
+    else if engine != "libwebp" { unused PrintError("unsupported benchmark engine\n"); return UnsupportedCapability }
+    options := WebpDefaultOptions()
+    budget := NewWorkerBudget(options.limits); options.workers = *budget
+    expected := ReadBoundedFile(TextFromCString(argv[2]), options.limits.max_output_bytes, null)
+    if expected.error.code != DecodeOK { return expected.error.code }
+    golden := expected.data
+    metadata: ImageMetadata
+    metadata.width = width; metadata.height = height; metadata.source_bit_depth = 8; metadata.has_alpha = true; metadata.frame_count = 1
+    result := BenchmarkFile(TextFromCString(argv[1]), VecSlice(golden, 0, golden.count), metadata, *options, provider, iterations)
+    if !result.is_ok { unused PrintError(ErrorText(result.error.code)); unused PrintError("\n"); return result.error.code }
+    provider_name := ifx engine == "libwebp" then "webp/libwebp" else ifx engine == "authored-still" then "webp/authored-still" else "webp/authored-vp8l"
+    document: JsonDocument
+    if !JsonRead(*document, BenchmarkJSON(*result, provider_name, version)) { return InvalidInput }
+    versions := JsonMember(*document, document.root, "tool_versions")
+    codec_version: Vec(u8)
+    if engine == "libwebp" {
+        Append(*codec_version, "libwebp packed "); Append(*codec_version, cast(s64)LibwebpVersion())
+        unused JsonSet(*document, versions, "codec", JsonNewString(*document, TextView(VecSlice(codec_version, 0, codec_version.count))))
+        unused JsonSet(*document, versions, "codec_revision", JsonNewString(*document, "1844042d1ca751e62e61df7617dba19c98588339"))
+    } else {
+        // This new local package has neither a release version nor a commit.
+        unused JsonSet(*document, versions, "codec", JsonNewNull(*document))
+        unused JsonSet(*document, versions, "codec_revision", JsonNewNull(*document))
+    }
+    if !WriteEntireFile(TextFromCString(argv[5]), JsonWrite(*document, document.root, JsonPythonStyle(2))) { return InputOutputFailed }
+    return 0
+}

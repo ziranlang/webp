@@ -1,0 +1,24 @@
+#import "webp_private/alpha_plane"
+#import "webp_private/riff"
+#import "image_codec/benchmark"
+#import "std/byte_text_linux"
+#import "std/vec"
+#import "image_codec/buffer"
+#program_export
+main :: (argc: s32, argv: **u8) -> s32 {
+    if argc != 3 { return 90 }
+    options := WebpDefaultOptions(); budget := NewWorkerBudget(options.limits); options.workers = *budget
+    source := ReadBoundedFile(TextFromCString(argv[1]), options.limits.max_input_bytes, null)
+    expected := ReadBoundedFile(TextFromCString(argv[2]), options.limits.max_output_bytes, null)
+    if source.error.code != DecodeOK || expected.error.code != DecodeOK { return 91 }
+    bytes := source.data; golden := expected.data
+    probe := WebpProbe(BorrowBytes(VecSlice(bytes, 0, bytes.count)), options.limits)
+    if !probe.is_ok || probe.alpha.data.count == 0 || cast(s64)probe.metadata.width * probe.metadata.height * 4 != golden.count { return 92 }
+    result := ReadAlphaPlane(probe.alpha, probe.metadata.width, probe.metadata.height, *options)
+    if result.error.code != DecodeOK { return result.error.code }
+    for i: 0..result.plane.storage.count - 1 { if result.plane.storage[i] != golden[i * 4 + 3] { return 93 } }
+    if budget.working_bytes != result.reserved_bytes { return 94 }
+    VecFree(result.plane.storage); unused ReleaseWorkingBytes(*budget, result.reserved_bytes)
+    if budget.working_bytes != 0 { return 95 }
+    return 0
+}

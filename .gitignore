@@ -1,0 +1,6 @@
+/build/
+/out/
+/backup/
+/ziran.local.toml
+__pycache__/
+/.yue/

@@ -1,0 +1,19 @@
+#import "webp_private/vpredict"
+#program_export
+SelfTest :: () -> s32 {
+    data: [1024]u8; state: u32 = 305419896
+    for i: 0..1023 { state = state * cast(u32)1664525 + cast(u32)1013904223; data[i] = cast(u8)(state >> cast(u32)24) }
+    if VIntraPredict(data[:], 32, 33, 4, 5).code != DecodeOK { return 1 }
+    hash: u64 = 14695981039346656037
+    for i: 0..1023 { hash = (hash ^ cast(u64)data[i]) * cast(u64)1099511628211 }
+    if hash != cast(u64)9145302692736546941 { return 2 } // independent pinned oracle
+    if VIntraPredict(data[:], 32, 33, 3, 0).code != InvalidInput { return 3 }
+    if VIntraPredict(data[:], 32, 33, 4, 10).code != UnsupportedCapability { return 4 }
+    if VIntraPredict(data[:], 32, 0, 4, 0).code != OutputTooSmall { return 5 }
+    if VIntraPredict(data[:], 9223372036854775807, 33, 4, 0).code != OutputTooSmall { return 6 }
+    if VIntraPredict(data[:], 32, 33, 16, 0, false, false).code != DecodeOK { return 7 }
+    for y: 0..15 { for x: 0..15 { if data[33 + y * 32 + x] != 128 { return 8 } } }
+    return 0
+}
+#program_export
+main :: () -> s32 { return SelfTest() }

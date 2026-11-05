@@ -1,0 +1,24 @@
+#import "webp_private/vtransform"
+#program_export
+TransformDct :: (coefficients: *s16, pixels: *u8) -> s32 {
+    input: [16]s16; plane: [1024]u8
+    for i: 0..15 { input[i] = coefficients[i] }
+    for i: 0..1023 { plane[i] = pixels[i] }
+    error := VInverseDCT(input[:], plane[33:], 32)
+    for i: 0..1023 { pixels[i] = plane[i] }
+    return error.code
+}
+#program_export
+TransformWht :: (coefficients: *s16, output: *s16) -> s32 {
+    input: [16]s16; dc: [16]s16
+    for i: 0..15 { input[i] = coefficients[i] }
+    error := VInverseWHT(input[:], dc[:])
+    for i: 0..15 { output[i] = dc[i] }
+    return error.code
+}
+#program_export
+TransformBoth :: (coefficients: *s16, pixels: *u8, output: *s16) -> s32 {
+    error := TransformDct(coefficients, pixels)
+    if error != DecodeOK { return error }
+    return TransformWht(coefficients, output)
+}

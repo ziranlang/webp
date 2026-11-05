@@ -1,0 +1,10 @@
+#import "vp8_header_shared"
+#program_export
+Fingerprint :: (input: *u8, size: s64) -> u64 {
+    if size < 0 || size > 65536 { return 0 }
+    bytes: [65536]u8
+    for i: 0..size - 1 { bytes[i] = input[i] }
+    header := ReadVp8Header(BorrowBytes(bytes[:size]), DefaultLimits(), null)
+    if !header.is_ok { return cast(u64)header.error.code }
+    return HeaderHash(*header)
+}

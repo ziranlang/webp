@@ -1,0 +1,42 @@
+#import "webp_private/ltransforms"
+#program_export
+SelfTest :: () -> s32 {
+    if LAdd(cast(u32)0xfffa0102, cast(u32)0x030908ff) != cast(u32)0x02030901 ||
+       LAverage(cast(u32)0xff010305, cast(u32)0x01030507) != cast(u32)0x80020406 { return 1 }
+    expected: [14]u32 = .[0xff000000,0xff0a0a0a,0xff141414,0xff282828,0xff1e1e1e,0xff161616,0xff141414,
+        0xff0f0f0f,0xff191919,0xff1e1e1e,0xff191919,0xff0a0a0a,0xff000000,0xff080808]
+    for mode: 0..13 {
+        if LPredict(cast(s32)mode, cast(u32)0xff0a0a0a, cast(u32)0xff141414, cast(u32)0xff1e1e1e, cast(u32)0xff282828) != expected[mode] { return 2 }
+    }
+    if LColorWord(cast(u32)0xffc89611, cast(u32)0xff20c040) != cast(u32)0xfff496d9 { return 3 }
+    words: [4]u32 = .[0x00010203,0x00010203,0x00010203,0x00010203]
+    modes: [1]u32
+    if LInversePredictor(words[:], 2, 2, modes[:], 2, null).code != DecodeOK ||
+       words[0] != cast(u32)0xff010203 || words[1] != cast(u32)0xff020406 || words[2] != cast(u32)0xff020406 || words[3] != cast(u32)0xff010203 { return 4 }
+    bad_modes: [1]u32 = .[0x00000e00]
+    if LInversePredictor(words[:], 2, 2, bad_modes[:], 2, null).code != MalformedInput { return 5 }
+    if LInversePredictor(words[:3], 2, 2, modes[:], 2, null).code != TruncatedInput { return 6 }
+    color: [1]u32 = .[0xffc89611]
+    coefficients: [1]u32 = .[0xff20c040]
+    if LInverseColor(color[:], 1, 1, coefficients[:], 2, null).code != DecodeOK || color[0] != cast(u32)0xfff496d9 { return 7 }
+    green: [1]u32 = .[0xff0a1405]
+    if LInverseGreen(green[:], null).code != DecodeOK || green[0] != cast(u32)0xff1e1419 { return 8 }
+    palette: [2]u32 = .[0x00112233,0xff010203]
+    LExpandPalette(palette[:])
+    if palette[1] != cast(u32)0xff122436 { return 9 }
+    indexed: [1]u32 = .[0xff000500]
+    colors: [2]u32 = .[0xff000000,0xffffffff]
+    output: [3]u32
+    if LInverseIndex(indexed[:], output[:], 3, 1, colors[:], 3, null).code != DecodeOK ||
+       output[0] != cast(u32)0xffffffff || output[1] != cast(u32)0xff000000 || output[2] != cast(u32)0xffffffff { return 10 }
+    absent: [1]u32 = .[0xff000300]
+    three: [3]u32 = .[0xff000000,0xff111111,0xff222222]
+    if LInverseIndex(absent[:], output[:1], 1, 1, three[:], 2, null).code != DecodeOK || output[0] != cast(u32)0 { return 11 }
+    token: Cancellation; Cancel(*token)
+    if LInverseColor(color[:], 1, 1, coefficients[:], 2, *token).code != DecodeCancelled ||
+       LInverseGreen(green[:], *token).code != DecodeCancelled ||
+       LInverseIndex(indexed[:], output[:], 3, 1, colors[:], 3, *token).code != DecodeCancelled { return 12 }
+    return 0
+}
+#program_export
+main :: () -> s32 { return SelfTest() }

@@ -1,0 +1,217 @@
+using Codes :: #import "lhuffman"
+using Transforms :: #import "ltransforms"
+
+// Private code-word storage, not a public image representation. The sole public
+// pixel result is std/image.Image. reserved_bytes covers actual Vec capacity.
+LosslessWords :: struct { words: Vec(u32); reserved_bytes: s64; error: DecodeError; }
+LosslessTransform :: struct { kind: s32; width: s32; bits: s32; }
+
+// WebP lossless format's 120 local distance codes, in normative order.
+// Cross-checked against pinned libwebp's kCodeToPlane (BSD, see docs/NOTICE.md).
+LocalDistance: [120]u8 = .[
+    0x18,0x07,0x17,0x19,0x28,0x06,0x27,0x29,0x16,0x1a,0x26,0x2a,
+    0x38,0x05,0x37,0x39,0x15,0x1b,0x36,0x3a,0x25,0x2b,0x48,0x04,
+    0x47,0x49,0x14,0x1c,0x35,0x3b,0x46,0x4a,0x24,0x2c,0x58,0x45,
+    0x4b,0x34,0x3c,0x03,0x57,0x59,0x13,0x1d,0x56,0x5a,0x23,0x2d,
+    0x44,0x4c,0x55,0x5b,0x33,0x3d,0x68,0x02,0x67,0x69,0x12,0x1e,
+    0x66,0x6a,0x22,0x2e,0x54,0x5c,0x43,0x4d,0x65,0x6b,0x32,0x3e,
+    0x78,0x01,0x77,0x79,0x53,0x5d,0x11,0x1f,0x64,0x6c,0x42,0x4e,
+    0x76,0x7a,0x21,0x2f,0x75,0x7b,0x31,0x3f,0x63,0x6d,0x52,0x5e,
+    0x00,0x74,0x7c,0x41,0x4f,0x10,0x20,0x62,0x6e,0x30,0x73,0x7d,
+    0x51,0x5f,0x40,0x72,0x7e,0x61,0x6f,0x50,0x71,0x7f,0x60,0x70];
+
+LWordsFailure :: (error: DecodeError) -> LosslessWords { result: LosslessWords; result.error = error; return result }
+// Every buffer is new: reserve its exact backing size before allocation. The
+// bounded primitive prevents geometric capacity growth beyond that reservation.
+LWordsResize :: (values: *Vec(u32), count: s64) -> bool { return VecResizeBounded(<<values, count, count) }
+LGroupsResize :: (values: *Vec(LosslessGroup), count: s64) -> bool { return VecResizeBounded(<<values, count, count) }
+LWordsAllocate :: (values: *Vec(u32), count: s64, options: *DecodeOptions) -> DecodeError {
+    if count < 0 || count > 2305843009213693951 { return Error(LimitExceeded) }
+    if values.count != 0 || values.capacity != 0 { return Error(InvalidInput) }
+    error := ReserveWorkingBytes(options.workers, count * 4, options.cancellation)
+    if error.code != DecodeOK { return error }
+    if !LWordsResize(values, count) { return Error(AllocationFailed) }
+    return Error(DecodeOK)
+}
+LCacheInsert :: (cache: []u32, bits: s32, word: u32) {
+    if bits != 0 {
+        hash := (word * cast(u32)0x1e35a7bd) >> cast(u32)(32 - bits)
+        cache[cast(s64)hash] = word
+    }
+}
+LDistance :: (code: s32, width: s32) -> s32 {
+    if code > 120 { return code - 120 }
+    local := cast(s32)LocalDistance[code - 1]
+    distance := (local >> 4) * width + 8 - (local & 15)
+    return ifx distance < 1 then 1 else distance
+}
+
+LStreamInner :: (bits: *LosslessBits, width: s32, height: s32, top_level: bool, options: *DecodeOptions) -> LosslessWords {
+    if width <= 0 || height <= 0 { return LWordsFailure(Error(MalformedInput)) }
+    if bits.trace != null { bits.trace.streams += 1 }
+    transforms: [4]LosslessTransform; transform_count: s32; transform_mask: u32
+    predictor: Vec(u32); color: Vec(u32); palette: Vec(u32)
+    current_width := width
+    if top_level {
+        while bits.error.code == DecodeOK && LRead(bits, 1) != cast(u32)0 {
+            kind := cast(s32)LRead(bits, 2)
+            mask := cast(u32)1 << cast(u32)kind
+            if (transform_mask & mask) != cast(u32)0 || transform_count >= 4 { return LWordsFailure(Error(MalformedInput)) }
+            transform_mask |= mask
+            if bits.trace != null { bits.trace.transform_mask |= mask }
+            transform := LosslessTransform.{kind, current_width, 0}
+            if kind == 0 || kind == 1 {
+                transform.bits = cast(s32)LRead(bits, 3) + 2
+                block := 1 << transform.bits
+                columns := cast(s32)((cast(s64)current_width + block - 1) / block)
+                rows := cast(s32)((cast(s64)height + block - 1) / block)
+                map := LStream(bits, columns, rows, false, options)
+                if map.error.code != DecodeOK { return LWordsFailure(map.error) }
+                if kind == 0 {
+                    VecSwap(predictor, map.words)
+                    for i: 0..predictor.count - 1 {
+                        mode := LChannel(predictor[i], 1) & 15
+                        // libwebp has black security sentinels for reserved
+                        // modes 14/15. They are not defined predictors here.
+                        if mode > 13 { return LWordsFailure(Error(UnsupportedCapability)) }
+                        if bits.trace != null { bits.trace.predictor_modes |= cast(u32)1 << cast(u32)mode }
+                    }
+                } else { VecSwap(color, map.words) }
+            } else if kind == 3 {
+                count := cast(s32)LRead(bits, 8) + 1
+                map := LStream(bits, count, 1, false, options)
+                if map.error.code != DecodeOK { return LWordsFailure(map.error) }
+                VecSwap(palette, map.words)
+                LExpandPalette(VecSlice(palette, 0, palette.count))
+                transform.bits = ifx count <= 2 then 3 else ifx count <= 4 then 2 else ifx count <= 16 then 1 else 0
+                if bits.trace != null { bits.trace.palette_width_bits |= cast(u32)1 << cast(u32)transform.bits }
+                packed := 1 << transform.bits
+                current_width = cast(s32)((cast(s64)current_width + packed - 1) / packed)
+            }
+            transforms[transform_count] = transform; transform_count += 1
+        }
+    }
+    cache_bits: s32
+    if LRead(bits, 1) != cast(u32)0 {
+        cache_bits = cast(s32)LRead(bits, 4)
+        if cache_bits < 1 || cache_bits > 11 { return LWordsFailure(Error(MalformedInput)) }
+        if bits.trace != null { bits.trace.cache_bits |= cast(u32)1 << cast(u32)cache_bits }
+    }
+    entropy: Vec(u32); entropy_bits: s32; entropy_columns: s32; group_count: s32 = 1
+    if top_level && LRead(bits, 1) != cast(u32)0 {
+        entropy_bits = cast(s32)LRead(bits, 3) + 2
+        block := 1 << entropy_bits
+        entropy_columns = cast(s32)((cast(s64)current_width + block - 1) / block)
+        rows := cast(s32)((cast(s64)height + block - 1) / block)
+        map := LStream(bits, entropy_columns, rows, false, options)
+        if map.error.code != DecodeOK { return LWordsFailure(map.error) }
+        VecSwap(entropy, map.words)
+        for i: 0..entropy.count - 1 {
+            entropy[i] = (entropy[i] >> cast(u32)8) & cast(u32)65535
+            group := cast(s32)entropy[i] + 1
+            if group > group_count { group_count = group }
+        }
+    }
+    if bits.error.code != DecodeOK { return LWordsFailure(bits.error) }
+    if bits.trace != null && group_count > bits.trace.entropy_groups { bits.trace.entropy_groups = group_count }
+    groups: Vec(LosslessGroup)
+    group_bytes := cast(s64)group_count * size_of(LosslessGroup)
+    error := ReserveWorkingBytes(options.workers, group_bytes, options.cancellation)
+    if error.code != DecodeOK { return LWordsFailure(error) }
+    if !LGroupsResize(*groups, group_count) { return LWordsFailure(Error(AllocationFailed)) }
+    cache_size := ifx cache_bits == 0 then 0 else 1 << cache_bits
+    for group: 0..group_count - 1 {
+        error = CancellationError(options.cancellation)
+        if error.code != DecodeOK { return LWordsFailure(error) }
+        for channel: 0..4 {
+            alphabet := ifx channel == 0 then 280 + cache_size else ifx channel == 4 then 40 else 256
+            if !LReadTree(bits, alphabet, *groups[group].trees[channel]) { return LWordsFailure(bits.error) }
+        }
+    }
+    cache: Vec(u32)
+    if cache_size != 0 {
+        error = LWordsAllocate(*cache, cache_size, options)
+        if error.code != DecodeOK { return LWordsFailure(error) }
+    }
+    words: Vec(u32)
+    count := cast(s64)current_width * height
+    error = LWordsAllocate(*words, count, options)
+    if error.code != DecodeOK { return LWordsFailure(error) }
+    at: s64
+    while at < count {
+        if at % 4096 == 0 || at % current_width == 0 {
+            error = CancellationError(options.cancellation)
+            if error.code != DecodeOK { return LWordsFailure(error) }
+        }
+        group: s32
+        if entropy_bits != 0 {
+            x := cast(s32)(at % current_width); y := cast(s32)(at / current_width)
+            group = cast(s32)entropy[(y >> entropy_bits) * entropy_columns + (x >> entropy_bits)]
+        }
+        green := LSymbol(bits, *groups[group].trees[0])
+        if bits.error.code != DecodeOK { return LWordsFailure(bits.error) }
+        if green < 256 {
+            red := LSymbol(bits, *groups[group].trees[1]); blue := LSymbol(bits, *groups[group].trees[2]); alpha := LSymbol(bits, *groups[group].trees[3])
+            if bits.error.code != DecodeOK { return LWordsFailure(bits.error) }
+            word := (cast(u32)alpha << cast(u32)24) | (cast(u32)red << cast(u32)16) | (cast(u32)green << cast(u32)8) | cast(u32)blue
+            words[at] = word; at += 1
+            LCacheInsert(VecSlice(cache, 0, cache.count), cache_bits, word)
+            if bits.trace != null { bits.trace.literals += 1 }
+        } else if green < 280 {
+            length := LPrefix(bits, green - 256)
+            distance_code := LPrefix(bits, LSymbol(bits, *groups[group].trees[4]))
+            if bits.error.code != DecodeOK { return LWordsFailure(bits.error) }
+            distance := LDistance(distance_code, current_width)
+            if distance > at || length > count - at { return LWordsFailure(Error(MalformedInput)) }
+            for i: 0..length - 1 {
+                word := words[at - distance]; words[at] = word; at += 1
+                LCacheInsert(VecSlice(cache, 0, cache.count), cache_bits, word)
+            }
+            if bits.trace != null { bits.trace.backrefs += 1 }
+        } else {
+            slot := green - 280
+            if slot >= cache_size { return LWordsFailure(Error(MalformedInput)) }
+            word := cache[slot]; words[at] = word; at += 1
+            LCacheInsert(VecSlice(cache, 0, cache.count), cache_bits, word)
+            if bits.trace != null { bits.trace.cache_hits += 1 }
+        }
+    }
+    // Entropy state is no longer live during inverse transforms.
+    released := groups.capacity * size_of(LosslessGroup) + (cache.capacity + entropy.capacity) * 4
+    VecFree(groups); VecFree(cache); VecFree(entropy)
+    unused ReleaseWorkingBytes(options.workers, released)
+    for reverse: 0..transform_count - 1 {
+        transform := transforms[transform_count - 1 - cast(s32)reverse]
+        if transform.kind == 0 {
+            error = LInversePredictor(VecSlice(words, 0, words.count), transform.width, height, VecSlice(predictor, 0, predictor.count), transform.bits, options.cancellation)
+            released = predictor.capacity * 4; VecFree(predictor)
+        } else if transform.kind == 1 {
+            error = LInverseColor(VecSlice(words, 0, words.count), transform.width, height, VecSlice(color, 0, color.count), transform.bits, options.cancellation)
+            released = color.capacity * 4; VecFree(color)
+        } else if transform.kind == 2 {
+            error = LInverseGreen(VecSlice(words, 0, words.count), options.cancellation)
+            released = 0
+        } else {
+            expanded: Vec(u32)
+            error = LWordsAllocate(*expanded, cast(s64)transform.width * height, options)
+            if error.code != DecodeOK { return LWordsFailure(error) }
+            error = LInverseIndex(VecSlice(words, 0, words.count), VecSlice(expanded, 0, expanded.count), transform.width, height, VecSlice(palette, 0, palette.count), transform.bits, options.cancellation)
+            VecSwap(words, expanded)
+            released = (expanded.capacity + palette.capacity) * 4
+            VecFree(expanded); VecFree(palette)
+        }
+        unused ReleaseWorkingBytes(options.workers, released)
+        if error.code != DecodeOK { return LWordsFailure(error) }
+    }
+    reserved := words.capacity * 4
+    return LosslessWords.{words, reserved, Error(DecodeOK)}
+}
+
+LStream :: (bits: *LosslessBits, width: s32, height: s32, top_level: bool, options: *DecodeOptions) -> LosslessWords {
+    before := options.workers.working_bytes
+    result := LStreamInner(bits, width, height, top_level, options)
+    // All unsuccessful/temporary inner storage has dropped before releasing
+    // its reservation. On success only result.words remains live.
+    unused ReleaseWorkingBytes(options.workers, options.workers.working_bytes - before - result.reserved_bytes)
+    return result
+}

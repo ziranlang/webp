@@ -1,0 +1,49 @@
+#import "webp_private/lhuffman"
+Put :: (output: []u8, position: *s32, value: u32, count: s32) {
+    for i: 0..count - 1 {
+        at := <<position
+        output[at / 8] |= cast(u8)((value >> cast(u32)i) & cast(u32)1) << cast(u8)(at % 8)
+        <<position += 1
+    }
+}
+#program_export
+SelfTest :: () -> s32 {
+    bytes: [1]u8 = .[172]
+    bits: LosslessBits; bits.data = bytes[:]
+    if LRead(*bits, 3) != cast(u32)4 || LRead(*bits, 3) != cast(u32)5 || LRead(*bits, 2) != cast(u32)2 { return 1 }
+    unused LRead(*bits, 1)
+    if bits.error.code != TruncatedInput { return 2 }
+    lengths: [3]s32 = .[1, 2, 2]
+    tree: LosslessTree
+    if !LBuildTree(lengths[:], *tree) { return 3 }
+    coded: [1]u8 = .[26]
+    symbols: LosslessBits; symbols.data = coded[:]
+    if LSymbol(*symbols, *tree) != 0 || LSymbol(*symbols, *tree) != 1 || LSymbol(*symbols, *tree) != 2 { return 4 }
+    invalid: [3]s32 = .[1,1,1]
+    if LBuildTree(invalid[:], *tree) { return 5 }
+    short: [3]s32 = .[2,0,0]
+    if LBuildTree(short[:], *tree) { return 6 }
+    empty: [3]s32
+    if LBuildTree(empty[:], *tree) { return 7 }
+    simple: [8]u8; at: s32
+    Put(simple[:], *at, 1, 1); Put(simple[:], *at, 0, 1); Put(simple[:], *at, 1, 1); Put(simple[:], *at, 7, 8)
+    simple_bits: LosslessBits; simple_bits.data = simple[:]
+    if !LReadTree(*simple_bits, 256, *tree) { return 8 }
+    before := simple_bits.at; available := simple_bits.available
+    if LSymbol(*simple_bits, *tree) != 7 || simple_bits.at != before || simple_bits.available != available { return 9 }
+    duplicate: [8]u8; duplicate_at: s32
+    Put(duplicate[:], *duplicate_at, 1, 1); Put(duplicate[:], *duplicate_at, 1, 1); Put(duplicate[:], *duplicate_at, 1, 1)
+    Put(duplicate[:], *duplicate_at, 3, 8); Put(duplicate[:], *duplicate_at, 3, 8)
+    duplicate_bits: LosslessBits; duplicate_bits.data = duplicate[:]
+    if !LReadTree(*duplicate_bits, 256, *tree) || LSymbol(*duplicate_bits, *tree) != 3 { return 10 }
+    out_of_range: LosslessBits; out_of_range.data = simple[:]
+    if LReadTree(*out_of_range, 4, *tree) || out_of_range.error.code != MalformedInput { return 11 }
+    extra: [1]u8 = .[1]
+    prefix: LosslessBits; prefix.data = extra[:]
+    if LPrefix(*prefix, 0) != 1 || LPrefix(*prefix, 4) != 6 { return 12 }
+    unused LPrefix(*prefix, 40)
+    if prefix.error.code != MalformedInput { return 13 }
+    return 0
+}
+#program_export
+main :: () -> s32 { return SelfTest() }

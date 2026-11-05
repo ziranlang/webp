@@ -1,0 +1,41 @@
+#import "webp/riff"
+// Header-only synthetic structure: probe tests do not claim decoded pixels.
+#program_export
+SelfTest :: () -> s32 {
+    bytes: [26]u8 = .[82,73,70,70,18,0,0,0,87,69,66,80,86,80,56,76,5,0,0,0,47,2,64,0,16,0]
+    limits := DefaultLimits()
+    if !WebpHasSignature(BorrowBytes(bytes[:12])) || WebpHasSignature(BorrowBytes(bytes[:11])) { return 9 }
+    bytes[8] = 0
+    if WebpHasSignature(BorrowBytes(bytes[:])) { return 10 }
+    bytes[8] = 87
+    result := WebpProbe(BorrowBytes(bytes[:]), limits)
+    if !result.is_ok || result.kind != WebpLossless || result.metadata.width != 3 || result.metadata.height != 2 ||
+       !result.metadata.has_alpha || result.metadata.source_bit_depth != 8 || result.payload.data.count != 5 { return 1 }
+    short := WebpProbe(BorrowBytes(bytes[:25]), limits)
+    if short.error.code != TruncatedInput { return 2 }
+    bytes[0] = 0
+    bad := WebpProbe(BorrowBytes(bytes[:]), limits)
+    if bad.error.code != MalformedInput { return 3 }
+    bytes[0] = 82; bytes[24] = 48
+    version := WebpProbe(BorrowBytes(bytes[:]), limits)
+    if version.error.code != UnsupportedCapability { return 4 }
+    bytes[24] = 16; bytes[25] = 1
+    padding := WebpProbe(BorrowBytes(bytes[:]), limits)
+    if padding.error.code != MalformedInput { return 5 }
+    bytes[25] = 0; limits.max_width = 2
+    large := WebpProbe(BorrowBytes(bytes[:]), limits)
+    if large.error.code != LimitExceeded { return 6 }
+    metadata: [36]u8
+    for i: 0..25 { metadata[i] = bytes[i] }
+    metadata[4] = 28
+    for i: 0..3 { metadata[26 + i] = "ICCP"[i] }
+    metadata[30] = 2; metadata[34] = 7; metadata[35] = 8
+    limits = DefaultLimits()
+    tagged := WebpProbe(BorrowBytes(metadata[:]), limits)
+    if !tagged.is_ok || tagged.metadata.metadata_bytes != 2 { return 7 }
+    limits.max_metadata_bytes = 1
+    if WebpProbe(BorrowBytes(metadata[:]), limits).error.code != LimitExceeded { return 8 }
+    return 0
+}
+#program_export
+main :: () -> s32 { return SelfTest() }

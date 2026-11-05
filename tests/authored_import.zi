@@ -1,0 +1,35 @@
+#import "webp/authored_lossless"
+#import "std/image"
+#import "std/vec"
+Put :: (data: []u8, at: *s32, value: u32, count: s32) {
+    for i: 0..count - 1 {
+        bit := <<at; data[bit / 8] |= cast(u8)((value >> cast(u32)i) & cast(u32)1) << cast(u8)(bit % 8); <<at += 1
+    }
+}
+Simple :: (data: []u8, at: *s32, symbol: u32) {
+    Put(data, at, 1, 1); Put(data, at, 0, 1)
+    wide := ifx symbol > cast(u32)1 then 1 else 0
+    Put(data, at, cast(u32)wide, 1); Put(data, at, symbol, cast(s32)(1 + wide * 7))
+}
+#program_export
+SelfTest :: () -> s32 {
+    encoded: [64]u8
+    for i: 0..3 { encoded[i] = "RIFF"[i]; encoded[8 + i] = "WEBP"[i]; encoded[12 + i] = "VP8L"[i] }
+    encoded[20] = 47; encoded[21] = 2; encoded[24] = 16 // 3x1 RGBA8 lossless
+    at: s32 = 25 * 8
+    Put(encoded[:], *at, 0, 1); Put(encoded[:], *at, 0, 1); Put(encoded[:], *at, 0, 1)
+    Simple(encoded[:], *at, 52); Simple(encoded[:], *at, 86); Simple(encoded[:], *at, 18); Simple(encoded[:], *at, 120); Simple(encoded[:], *at, 0)
+    bytes := (at + 7) / 8
+    encoded[16] = cast(u8)(bytes - 20)
+    bytes += (bytes - 20) & 1; encoded[4] = cast(u8)(bytes - 8)
+    options := WebpDefaultOptions(); budget := NewWorkerBudget(options.limits); options.workers = *budget
+    result := WebpAuthoredLosslessDecode(BorrowBytes(encoded[:bytes]), options)
+    if !result.is_ok || !ImageValid(*result.image) || result.image.width != 3 || result.image.height != 1 || result.image.pixels.capacity != 12 { return 1 }
+    for x: 0..2 {
+        if result.image.pixels[x * 4] != 86 || result.image.pixels[x * 4 + 1] != 52 || result.image.pixels[x * 4 + 2] != 18 || result.image.pixels[x * 4 + 3] != 120 { return 2 }
+    }
+    if budget.active_workers != 0 || budget.working_bytes != 0 || budget.peak_workers != 1 { return 3 }
+    return 0
+}
+#program_export
+main :: () -> s32 { return SelfTest() }

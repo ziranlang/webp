@@ -1,0 +1,740 @@
+{
+  "files": [
+    {
+      "expected_features": {
+        "predictor_modes": [
+          0
+        ],
+        "transforms": [
+          0
+        ]
+      },
+      "golden": "predictor-00.rgba",
+      "golden_bytes": 252,
+      "golden_sha256": "53f7683897bbda2b9e6d0c04154d21f885ac763e8b90313efcbc763234763ad9",
+      "height": 7,
+      "input": "predictor-00.webp",
+      "input_bytes": 34,
+      "input_sha256": "52c1226bebefdaffbea9adb2befbb6e7bfa359fd644146b9013e0a7218a8463d",
+      "provenance": "tests/generate_lossless.py, deterministic original test patterns/bitstreams",
+      "rights": "CC0-1.0, dedicated by the fixture author",
+      "width": 9
+    },
+    {
+      "expected_features": {
+        "predictor_modes": [
+          1
+        ],
+        "transforms": [
+          0
+        ]
+      },
+      "golden": "predictor-01.rgba",
+      "golden_bytes": 252,
+      "golden_sha256": "f683e8f63ae5608b1f6949a65d50f8d1119db985954560eedccfbe1288364474",
+      "height": 7,
+      "input": "predictor-01.webp",
+      "input_bytes": 34,
+      "input_sha256": "5594c14cbc398ac4ce7f641ea1f6da8d71fa26242b97ffff65109aed7f961b0b",
+      "provenance": "tests/generate_lossless.py, deterministic original test patterns/bitstreams",
+      "rights": "CC0-1.0, dedicated by the fixture author",
+      "width": 9
+    },
+    {
+      "expected_features": {
+        "predictor_modes": [
+          2
+        ],
+        "transforms": [
+          0
+        ]
+      },
+      "golden": "predictor-02.rgba",
+      "golden_bytes": 252,
+      "golden_sha256": "f683e8f63ae5608b1f6949a65d50f8d1119db985954560eedccfbe1288364474",
+      "height": 7,
+      "input": "predictor-02.webp",
+      "input_bytes": 34,
+      "input_sha256": "4a4a1d0262d1c5588b1f05ea572f74102d6e357c400e9da59029268df8f820f4",
+      "provenance": "tests/generate_lossless.py, deterministic original test patterns/bitstreams",
+      "rights": "CC0-1.0, dedicated by the fixture author",
+      "width": 9
+    },
+    {
+      "expected_features": {
+        "predictor_modes": [
+          3
+        ],
+        "transforms": [
+          0
+        ]
+      },
+      "golden": "predictor-03.rgba",
+      "golden_bytes": 252,
+      "golden_sha256": "cfa3c7eaa948c059e541026a856f3926a6ca0f85e0baffb261f3f88d92a864a6",
+      "height": 7,
+      "input": "predictor-03.webp",
+      "input_bytes": 34,
+      "input_sha256": "fc63c02f770d4e3151b3bd4dbae50147a5c13aec2c7a03cd82c076819a44042c",
+      "provenance": "tests/generate_lossless.py, deterministic original test patterns/bitstreams",
+      "rights": "CC0-1.0, dedicated by the fixture author",
+      "width": 9
+    },
+    {
+      "expected_features": {
+        "predictor_modes": [
+          4
+        ],
+        "transforms": [
+          0
+        ]
+      },
+      "golden": "predictor-04.rgba",
+      "golden_bytes": 252,
+      "golden_sha256": "e23a2204009248100b8ab975d71643707a63539d648f6b84606abee0f557725f",
+      "height": 7,
+      "input": "predictor-04.webp",
+      "input_bytes": 34,
+      "input_sha256": "f966b5180dbe36d7b0b17e3c0aa7e0fef37488e12e295513228e15a2fda41a98",
+      "provenance": "tests/generate_lossless.py, deterministic original test patterns/bitstreams",
+      "rights": "CC0-1.0, dedicated by the fixture author",
+      "width": 9
+    },
+    {
+      "expected_features": {
+        "predictor_modes": [
+          5
+        ],
+        "transforms": [
+          0
+        ]
+      },
+      "golden": "predictor-05.rgba",
+      "golden_bytes": 252,
+      "golden_sha256": "f06d335b8837d54b49362661abe8f8b641f176aba0a8934b20c97ab22b3e31d7",
+      "height": 7,
+      "input": "predictor-05.webp",
+      "input_bytes": 34,
+      "input_sha256": "3a4954c0d4d26bb1c449209cc413d3f4456b58a730b67582b35f2843f692e0d8",
+      "provenance": "tests/generate_lossless.py, deterministic original test patterns/bitstreams",
+      "rights": "CC0-1.0, dedicated by the fixture author",
+      "width": 9
+    },
+    {
+      "expected_features": {
+        "predictor_modes": [
+          6
+        ],
+        "transforms": [
+          0
+        ]
+      },
+      "golden": "predictor-06.rgba",
+      "golden_bytes": 252,
+      "golden_sha256": "e23a2204009248100b8ab975d71643707a63539d648f6b84606abee0f557725f",
+      "height": 7,
+      "input": "predictor-06.webp",
+      "input_bytes": 34,
+      "input_sha256": "552b3f7f0930baff00d9e935a6251441a895696ddabc8f0ac7663bd458a5fdb2",
+      "provenance": "tests/generate_lossless.py, deterministic original test patterns/bitstreams",
+      "rights": "CC0-1.0, dedicated by the fixture author",
+      "width": 9
+    },
+    {
+      "expected_features": {
+        "predictor_modes": [
+          7
+        ],
+        "transforms": [
+          0
+        ]
+      },
+      "golden": "predictor-07.rgba",
+      "golden_bytes": 252,
+      "golden_sha256": "f683e8f63ae5608b1f6949a65d50f8d1119db985954560eedccfbe1288364474",
+      "height": 7,
+      "input": "predictor-07.webp",
+      "input_bytes": 34,
+      "input_sha256": "cb59bd04be71708579a96f9f0c6ddbb5745e0bed0f5d4082568502a7d0ee2476",
+      "provenance": "tests/generate_lossless.py, deterministic original test patterns/bitstreams",
+      "rights": "CC0-1.0, dedicated by the fixture author",
+      "width": 9
+    },
+    {
+      "expected_features": {
+        "predictor_modes": [
+          8
+        ],
+        "transforms": [
+          0
+        ]
+      },
+      "golden": "predictor-08.rgba",
+      "golden_bytes": 252,
+      "golden_sha256": "e23a2204009248100b8ab975d71643707a63539d648f6b84606abee0f557725f",
+      "height": 7,
+      "input": "predictor-08.webp",
+      "input_bytes": 34,
+      "input_sha256": "0cb2cb10c4a7d49acd2925fd3609b3d43a462ba0b44a25de385b180f298a28e6",
+      "provenance": "tests/generate_lossless.py, deterministic original test patterns/bitstreams",
+      "rights": "CC0-1.0, dedicated by the fixture author",
+      "width": 9
+    },
+    {
+      "expected_features": {
+        "predictor_modes": [
+          9
+        ],
+        "transforms": [
+          0
+        ]
+      },
+      "golden": "predictor-09.rgba",
+      "golden_bytes": 252,
+      "golden_sha256": "32a08a65d690d137b7470bfa5485d849e4dbb9515e8444849fbe786ebac907f2",
+      "height": 7,
+      "input": "predictor-09.webp",
+      "input_bytes": 34,
+      "input_sha256": "6a7fd503149b6565efb33b4fe1f02dd38c53d3a8fdd78d52f0bbf8016d028b23",
+      "provenance": "tests/generate_lossless.py, deterministic original test patterns/bitstreams",
+      "rights": "CC0-1.0, dedicated by the fixture author",
+      "width": 9
+    },
+    {
+      "expected_features": {
+        "predictor_modes": [
+          10
+        ],
+        "transforms": [
+          0
+        ]
+      },
+      "golden": "predictor-10.rgba",
+      "golden_bytes": 252,
+      "golden_sha256": "a0d4c65e4f77d37259f5e41ef06553edd50ad2c74d4c991fdaaa12d27313e2f3",
+      "height": 7,
+      "input": "predictor-10.webp",
+      "input_bytes": 34,
+      "input_sha256": "206ac5ef3a5870426da44077da424c6c9b51e842469c5923a86fa8495a155b99",
+      "provenance": "tests/generate_lossless.py, deterministic original test patterns/bitstreams",
+      "rights": "CC0-1.0, dedicated by the fixture author",
+      "width": 9
+    },
+    {
+      "expected_features": {
+        "predictor_modes": [
+          11
+        ],
+        "transforms": [
+          0
+        ]
+      },
+      "golden": "predictor-11.rgba",
+      "golden_bytes": 252,
+      "golden_sha256": "f683e8f63ae5608b1f6949a65d50f8d1119db985954560eedccfbe1288364474",
+      "height": 7,
+      "input": "predictor-11.webp",
+      "input_bytes": 34,
+      "input_sha256": "8d15bfa513b12ad63670a78b6312f1e1fc5caabed1f139ce873ac463a1667eb4",
+      "provenance": "tests/generate_lossless.py, deterministic original test patterns/bitstreams",
+      "rights": "CC0-1.0, dedicated by the fixture author",
+      "width": 9
+    },
+    {
+      "expected_features": {
+        "predictor_modes": [
+          12
+        ],
+        "transforms": [
+          0
+        ]
+      },
+      "golden": "predictor-12.rgba",
+      "golden_bytes": 252,
+      "golden_sha256": "0f7a85ad7ed62015f18bd4474e986ed4a949fac0f41c53cb7e6c57086f0e46f7",
+      "height": 7,
+      "input": "predictor-12.webp",
+      "input_bytes": 34,
+      "input_sha256": "363bb080e0e1d89db7c18adb744ac76f01e138bc0dd1c5cbedc3f2c4543cdf20",
+      "provenance": "tests/generate_lossless.py, deterministic original test patterns/bitstreams",
+      "rights": "CC0-1.0, dedicated by the fixture author",
+      "width": 9
+    },
+    {
+      "expected_features": {
+        "predictor_modes": [
+          13
+        ],
+        "transforms": [
+          0
+        ]
+      },
+      "golden": "predictor-13.rgba",
+      "golden_bytes": 252,
+      "golden_sha256": "f683e8f63ae5608b1f6949a65d50f8d1119db985954560eedccfbe1288364474",
+      "height": 7,
+      "input": "predictor-13.webp",
+      "input_bytes": 34,
+      "input_sha256": "ec68650984abadf4e0b4d0fc2b6522253852caea000df16fd3d43cd8f6c22ed0",
+      "provenance": "tests/generate_lossless.py, deterministic original test patterns/bitstreams",
+      "rights": "CC0-1.0, dedicated by the fixture author",
+      "width": 9
+    },
+    {
+      "expected_features": {
+        "transforms": [
+          1
+        ]
+      },
+      "golden": "signed-color.rgba",
+      "golden_bytes": 60,
+      "golden_sha256": "749201a21e005b7830230b4006be084f407ec01c40f3fad9aa1562d1257e0ec2",
+      "height": 3,
+      "input": "signed-color.webp",
+      "input_bytes": 40,
+      "input_sha256": "c3eb38d002b805419da457961b10868233feb05b3a80031dbd10ce14dc368ca9",
+      "provenance": "tests/generate_lossless.py, deterministic original test patterns/bitstreams",
+      "rights": "CC0-1.0, dedicated by the fixture author",
+      "width": 5
+    },
+    {
+      "expected_features": {
+        "transforms": [
+          2
+        ]
+      },
+      "golden": "subtract-green.rgba",
+      "golden_bytes": 204,
+      "golden_sha256": "eb5967e0a4de8bfa9203746fbbcc43100bf764cf29fbf409c6087954b7059647",
+      "height": 3,
+      "input": "subtract-green.webp",
+      "input_bytes": 32,
+      "input_sha256": "3e89979b15d3eda33ccff24f567818b343552b197f97e761a6a3b390466c59e0",
+      "provenance": "tests/generate_lossless.py, deterministic original test patterns/bitstreams",
+      "rights": "CC0-1.0, dedicated by the fixture author",
+      "width": 17
+    },
+    {
+      "expected_features": {
+        "palette_width_bits": [
+          3
+        ],
+        "transforms": [
+          3
+        ]
+      },
+      "golden": "palette-002.rgba",
+      "golden_bytes": 228,
+      "golden_sha256": "6794bcfbc609473feff13e8977be58795b578c04d31a47228a40b1fab4d0749d",
+      "height": 3,
+      "input": "palette-002.webp",
+      "input_bytes": 38,
+      "input_sha256": "f2510c3bfe41385d0aaa99e36c9f9d617a192bf0ffe6ba382213eebe93bae314",
+      "provenance": "tests/generate_lossless.py, deterministic original test patterns/bitstreams",
+      "rights": "CC0-1.0, dedicated by the fixture author",
+      "width": 19
+    },
+    {
+      "expected_features": {
+        "palette_width_bits": [
+          2
+        ],
+        "transforms": [
+          3
+        ]
+      },
+      "golden": "palette-004.rgba",
+      "golden_bytes": 228,
+      "golden_sha256": "b88c00caa0c845e57f2edd8d248db98ffafc19dd08b3138af477bc7c95e5e743",
+      "height": 3,
+      "input": "palette-004.webp",
+      "input_bytes": 38,
+      "input_sha256": "9065d6403b4aaa76ab91f4225fdda34390e017cdeceef995c65e0bae2a2dbec9",
+      "provenance": "tests/generate_lossless.py, deterministic original test patterns/bitstreams",
+      "rights": "CC0-1.0, dedicated by the fixture author",
+      "width": 19
+    },
+    {
+      "expected_features": {
+        "palette_width_bits": [
+          1
+        ],
+        "transforms": [
+          3
+        ]
+      },
+      "golden": "palette-016.rgba",
+      "golden_bytes": 228,
+      "golden_sha256": "11b23034ec6aabf63145cd3efdfdfb45b7479329374ec41ead5e4c2b1d3f52e5",
+      "height": 3,
+      "input": "palette-016.webp",
+      "input_bytes": 38,
+      "input_sha256": "4c17ae6ac390e836163e3edc9a11344d150ed3ef42a52c5eab218af0654f4560",
+      "provenance": "tests/generate_lossless.py, deterministic original test patterns/bitstreams",
+      "rights": "CC0-1.0, dedicated by the fixture author",
+      "width": 19
+    },
+    {
+      "expected_features": {
+        "palette_width_bits": [
+          0
+        ],
+        "transforms": [
+          3
+        ]
+      },
+      "golden": "palette-017.rgba",
+      "golden_bytes": 228,
+      "golden_sha256": "9241bc2b410c2ee7e6a1e559ac87143facd9557dd0236c28068ad5730ec797e7",
+      "height": 3,
+      "input": "palette-017.webp",
+      "input_bytes": 38,
+      "input_sha256": "bea2c77406b88c8da69b84238d638b99c86d9e5b72d68337d698a024dccc548d",
+      "provenance": "tests/generate_lossless.py, deterministic original test patterns/bitstreams",
+      "rights": "CC0-1.0, dedicated by the fixture author",
+      "width": 19
+    },
+    {
+      "expected_features": {
+        "palette_width_bits": [
+          0
+        ],
+        "transforms": [
+          3
+        ]
+      },
+      "golden": "palette-256.rgba",
+      "golden_bytes": 228,
+      "golden_sha256": "d7af1b544ccb1d24b7c314cae2c7e6e2e46b214fbcbdc309cb8b8ef2d5ea9b0c",
+      "height": 3,
+      "input": "palette-256.webp",
+      "input_bytes": 38,
+      "input_sha256": "56fca3a35f5cd089652ac3c9bd077716b65226f4b1e7beeac328c77f0d45ccd3",
+      "provenance": "tests/generate_lossless.py, deterministic original test patterns/bitstreams",
+      "rights": "CC0-1.0, dedicated by the fixture author",
+      "width": 19
+    },
+    {
+      "expected_features": {
+        "backrefs_min": 1,
+        "normal_trees_min": 1
+      },
+      "golden": "overlap-backref.rgba",
+      "golden_bytes": 32,
+      "golden_sha256": "0a71c2e05014fefa70a64efba91d0e870238d736c699b3571884a005578530f6",
+      "height": 1,
+      "input": "overlap-backref.webp",
+      "input_bytes": 68,
+      "input_sha256": "b1ad74c35db0380716ac412910984f000076921dcd1c93868dbfc437f27d125e",
+      "provenance": "tests/generate_lossless.py, deterministic original test patterns/bitstreams",
+      "rights": "CC0-1.0, dedicated by the fixture author",
+      "width": 8
+    },
+    {
+      "expected_features": {
+        "cache_bits": [
+          1
+        ],
+        "cache_hits_min": 12,
+        "normal_trees_min": 1
+      },
+      "golden": "cache-01.rgba",
+      "golden_bytes": 52,
+      "golden_sha256": "aa5109e879e2d1235db2b68075ca21054f7238ba49b3f5cf4a646149b23936d6",
+      "height": 1,
+      "input": "cache-01.webp",
+      "input_bytes": 70,
+      "input_sha256": "5b670d28df6f33e85f5418d68d23885d4c88e2893f15fe9ac07655b66dfa38a1",
+      "provenance": "tests/generate_lossless.py, deterministic original test patterns/bitstreams",
+      "rights": "CC0-1.0, dedicated by the fixture author",
+      "width": 13
+    },
+    {
+      "expected_features": {
+        "cache_bits": [
+          4
+        ],
+        "cache_hits_min": 12,
+        "normal_trees_min": 1
+      },
+      "golden": "cache-04.rgba",
+      "golden_bytes": 52,
+      "golden_sha256": "aa5109e879e2d1235db2b68075ca21054f7238ba49b3f5cf4a646149b23936d6",
+      "height": 1,
+      "input": "cache-04.webp",
+      "input_bytes": 72,
+      "input_sha256": "f9d6fb620d9f214d4ab222a3864a95b1c13543a2f5cf4b6b17b3f77f8d7fdee9",
+      "provenance": "tests/generate_lossless.py, deterministic original test patterns/bitstreams",
+      "rights": "CC0-1.0, dedicated by the fixture author",
+      "width": 13
+    },
+    {
+      "expected_features": {
+        "cache_bits": [
+          8
+        ],
+        "cache_hits_min": 12,
+        "normal_trees_min": 1
+      },
+      "golden": "cache-08.rgba",
+      "golden_bytes": 52,
+      "golden_sha256": "aa5109e879e2d1235db2b68075ca21054f7238ba49b3f5cf4a646149b23936d6",
+      "height": 1,
+      "input": "cache-08.webp",
+      "input_bytes": 102,
+      "input_sha256": "49772809e9140ff11bdb5433d18a788ad051d9252d94586f56cef5d6d0b5db29",
+      "provenance": "tests/generate_lossless.py, deterministic original test patterns/bitstreams",
+      "rights": "CC0-1.0, dedicated by the fixture author",
+      "width": 13
+    },
+    {
+      "expected_features": {
+        "cache_bits": [
+          11
+        ],
+        "cache_hits_min": 12,
+        "normal_trees_min": 1
+      },
+      "golden": "cache-11.rgba",
+      "golden_bytes": 52,
+      "golden_sha256": "aa5109e879e2d1235db2b68075ca21054f7238ba49b3f5cf4a646149b23936d6",
+      "height": 1,
+      "input": "cache-11.webp",
+      "input_bytes": 326,
+      "input_sha256": "48651c93463c574aa4c5dbe666a1a10bd8729da17cdf66fbdd3e80a5db1f05f8",
+      "provenance": "tests/generate_lossless.py, deterministic original test patterns/bitstreams",
+      "rights": "CC0-1.0, dedicated by the fixture author",
+      "width": 13
+    },
+    {
+      "expected_features": {
+        "entropy_groups_min": 2
+      },
+      "golden": "entropy-groups.rgba",
+      "golden_bytes": 128,
+      "golden_sha256": "8d20bd9dbd7ab6ca5a23498aecdf9bc4e35e1af0d702ac8785ccaa58dbd184de",
+      "height": 4,
+      "input": "entropy-groups.webp",
+      "input_bytes": 44,
+      "input_sha256": "68601d9223248d16b225492770a480f72434a40df6ca7bd6616ac3c90957416f",
+      "provenance": "tests/generate_lossless.py, deterministic original test patterns/bitstreams",
+      "rights": "CC0-1.0, dedicated by the fixture author",
+      "width": 8
+    },
+    {
+      "expected_features": {},
+      "golden": "single-m0.rgba",
+      "golden_bytes": 4,
+      "golden_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119",
+      "height": 1,
+      "input": "single-m0.webp",
+      "input_bytes": 34,
+      "input_sha256": "86be52bdb7547413cafb3ed175a806a798c65de98b40849e0b974c47d187de65",
+      "provenance": "tests/generate_lossless.py, deterministic original test patterns/bitstreams",
+      "rights": "CC0-1.0, dedicated by the fixture author",
+      "width": 1
+    },
+    {
+      "expected_features": {},
+      "golden": "single-m6.rgba",
+      "golden_bytes": 4,
+      "golden_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119",
+      "height": 1,
+      "input": "single-m6.webp",
+      "input_bytes": 34,
+      "input_sha256": "86be52bdb7547413cafb3ed175a806a798c65de98b40849e0b974c47d187de65",
+      "provenance": "tests/generate_lossless.py, deterministic original test patterns/bitstreams",
+      "rights": "CC0-1.0, dedicated by the fixture author",
+      "width": 1
+    },
+    {
+      "expected_features": {},
+      "golden": "vertical-m0.rgba",
+      "golden_bytes": 292,
+      "golden_sha256": "818219a8bd1ac339c6001fb1cbedb30d52159fd521158dbea95985b6376ae890",
+      "height": 73,
+      "input": "vertical-m0.webp",
+      "input_bytes": 154,
+      "input_sha256": "43e7fa9814fe331d5f6c9dee599a170f0de3405b4193012ad12f66a1fbfed3ec",
+      "provenance": "tests/generate_lossless.py, deterministic original test patterns/bitstreams",
+      "rights": "CC0-1.0, dedicated by the fixture author",
+      "width": 1
+    },
+    {
+      "expected_features": {},
+      "golden": "vertical-m6.rgba",
+      "golden_bytes": 292,
+      "golden_sha256": "818219a8bd1ac339c6001fb1cbedb30d52159fd521158dbea95985b6376ae890",
+      "height": 73,
+      "input": "vertical-m6.webp",
+      "input_bytes": 54,
+      "input_sha256": "0be459a6292826b9c99d64ff7fe9ab70f624b19969951e168fe75348e55553cb",
+      "provenance": "tests/generate_lossless.py, deterministic original test patterns/bitstreams",
+      "rights": "CC0-1.0, dedicated by the fixture author",
+      "width": 1
+    },
+    {
+      "expected_features": {},
+      "golden": "horizontal-m0.rgba",
+      "golden_bytes": 364,
+      "golden_sha256": "ea96fa265b0a8f81fe90dc7033d7bc9428568d3b1ea4d53a24e3774ccd1fdb14",
+      "height": 1,
+      "input": "horizontal-m0.webp",
+      "input_bytes": 170,
+      "input_sha256": "9193f1608ff350c1c79273e96f4b5221a218ae8c459960601a7b78df32ecd069",
+      "provenance": "tests/generate_lossless.py, deterministic original test patterns/bitstreams",
+      "rights": "CC0-1.0, dedicated by the fixture author",
+      "width": 91
+    },
+    {
+      "expected_features": {},
+      "golden": "horizontal-m6.rgba",
+      "golden_bytes": 364,
+      "golden_sha256": "ea96fa265b0a8f81fe90dc7033d7bc9428568d3b1ea4d53a24e3774ccd1fdb14",
+      "height": 1,
+      "input": "horizontal-m6.webp",
+      "input_bytes": 50,
+      "input_sha256": "663e3bd6478b8229f5172573c599f5ee6f747586104e560c2727710e96519fd1",
+      "provenance": "tests/generate_lossless.py, deterministic original test patterns/bitstreams",
+      "rights": "CC0-1.0, dedicated by the fixture author",
+      "width": 91
+    },
+    {
+      "expected_features": {},
+      "golden": "odd-gradient-m0.rgba",
+      "golden_bytes": 1292,
+      "golden_sha256": "e8f583c3b19ae8bc4714dee53c44e4b412a1617b5cb4a90d0280aa3482675e49",
+      "height": 19,
+      "input": "odd-gradient-m0.webp",
+      "input_bytes": 128,
+      "input_sha256": "8b7f067d84640792389d806971c98822ba5f26fc443aea372430a98fea1c754e",
+      "provenance": "tests/generate_lossless.py, deterministic original test patterns/bitstreams",
+      "rights": "CC0-1.0, dedicated by the fixture author",
+      "width": 17
+    },
+    {
+      "expected_features": {},
+      "golden": "odd-gradient-m6.rgba",
+      "golden_bytes": 1292,
+      "golden_sha256": "e8f583c3b19ae8bc4714dee53c44e4b412a1617b5cb4a90d0280aa3482675e49",
+      "height": 19,
+      "input": "odd-gradient-m6.webp",
+      "input_bytes": 100,
+      "input_sha256": "e1cdf3956e8a881955fd6a77ceb095e25e9493a7f2edd9986fc2fe7f66ac4777",
+      "provenance": "tests/generate_lossless.py, deterministic original test patterns/bitstreams",
+      "rights": "CC0-1.0, dedicated by the fixture author",
+      "width": 17
+    },
+    {
+      "expected_features": {},
+      "golden": "wide-gradient-m0.rgba",
+      "golden_bytes": 13364,
+      "golden_sha256": "e5874a9279f66184c1a56f8784b2da234d017c567e8d046ea8230be885cc418b",
+      "height": 13,
+      "input": "wide-gradient-m0.webp",
+      "input_bytes": 310,
+      "input_sha256": "2036405b21d2a540a5333185eef3c28d648f9598f7a4d147ff93580c0dc8a527",
+      "provenance": "tests/generate_lossless.py, deterministic original test patterns/bitstreams",
+      "rights": "CC0-1.0, dedicated by the fixture author",
+      "width": 257
+    },
+    {
+      "expected_features": {},
+      "golden": "wide-gradient-m6.rgba",
+      "golden_bytes": 13364,
+      "golden_sha256": "e5874a9279f66184c1a56f8784b2da234d017c567e8d046ea8230be885cc418b",
+      "height": 13,
+      "input": "wide-gradient-m6.webp",
+      "input_bytes": 110,
+      "input_sha256": "29563ee211ff463a875ef873951458d14843134983f8fb6e7d42a0c9662fb67d",
+      "provenance": "tests/generate_lossless.py, deterministic original test patterns/bitstreams",
+      "rights": "CC0-1.0, dedicated by the fixture author",
+      "width": 257
+    },
+    {
+      "expected_features": {},
+      "golden": "noise-m0.rgba",
+      "golden_bytes": 4356,
+      "golden_sha256": "2bf09143a41203b7662e186c93e4b83ec32986e2fee4d66c38d6fc3c42ccdbc9",
+      "height": 33,
+      "input": "noise-m0.webp",
+      "input_bytes": 3382,
+      "input_sha256": "cc9c4e240b268fa67a73306ab8f3eb2000f80e2bbfabaa89738d22b41a2eed52",
+      "provenance": "tests/generate_lossless.py, deterministic original test patterns/bitstreams",
+      "rights": "CC0-1.0, dedicated by the fixture author",
+      "width": 33
+    },
+    {
+      "expected_features": {},
+      "golden": "noise-m6.rgba",
+      "golden_bytes": 4356,
+      "golden_sha256": "2bf09143a41203b7662e186c93e4b83ec32986e2fee4d66c38d6fc3c42ccdbc9",
+      "height": 33,
+      "input": "noise-m6.webp",
+      "input_bytes": 3374,
+      "input_sha256": "fc1de66e77527717307e0a3a10e9c5d7fe3e01f4c3c908398a678b5b7ef091c1",
+      "provenance": "tests/generate_lossless.py, deterministic original test patterns/bitstreams",
+      "rights": "CC0-1.0, dedicated by the fixture author",
+      "width": 33
+    },
+    {
+      "expected_features": {},
+      "golden": "repeat-m0.rgba",
+      "golden_bytes": 17460,
+      "golden_sha256": "0a5aac190b9ff48d6eaa261e956f6c66d1f1c6e0ac2091733c8b5a0326ae3473",
+      "height": 45,
+      "input": "repeat-m0.webp",
+      "input_bytes": 234,
+      "input_sha256": "073c23e67ea75aa0bd993eeaba555334fb74afb21c292074b8620b3c8c977e16",
+      "provenance": "tests/generate_lossless.py, deterministic original test patterns/bitstreams",
+      "rights": "CC0-1.0, dedicated by the fixture author",
+      "width": 97
+    },
+    {
+      "expected_features": {},
+      "golden": "repeat-m6.rgba",
+      "golden_bytes": 17460,
+      "golden_sha256": "0a5aac190b9ff48d6eaa261e956f6c66d1f1c6e0ac2091733c8b5a0326ae3473",
+      "height": 45,
+      "input": "repeat-m6.webp",
+      "input_bytes": 130,
+      "input_sha256": "08b02602d9011f15cb86b1d5f7fe29664bad7d377421c8f511df57d8d7b62846",
+      "provenance": "tests/generate_lossless.py, deterministic original test patterns/bitstreams",
+      "rights": "CC0-1.0, dedicated by the fixture author",
+      "width": 97
+    },
+    {
+      "expected_features": {},
+      "golden": "alpha-noise-m0.rgba",
+      "golden_bytes": 3596,
+      "golden_sha256": "ac60171d4329790bbf1bd8e9a23ffb413970db1dc25db919e5bf0ececdf5b155",
+      "height": 31,
+      "input": "alpha-noise-m0.webp",
+      "input_bytes": 3726,
+      "input_sha256": "436b30430872616bb498e17dec31a2e349164c6bab0e875bf87d65ec744f150d",
+      "provenance": "tests/generate_lossless.py, deterministic original test patterns/bitstreams",
+      "rights": "CC0-1.0, dedicated by the fixture author",
+      "width": 29
+    },
+    {
+      "expected_features": {},
+      "golden": "alpha-noise-m6.rgba",
+      "golden_bytes": 3596,
+      "golden_sha256": "ac60171d4329790bbf1bd8e9a23ffb413970db1dc25db919e5bf0ececdf5b155",
+      "height": 31,
+      "input": "alpha-noise-m6.webp",
+      "input_bytes": 3716,
+      "input_sha256": "a008766c43c59e9e9deb22c9076b0c17290d21bb9f8260ee249aef2fbcd9ee88",
+      "provenance": "tests/generate_lossless.py, deterministic original test patterns/bitstreams",
+      "rights": "CC0-1.0, dedicated by the fixture author",
+      "width": 29
+    }
+  ],
+  "generator": "tests/generate_lossless.py",
+  "generator_sha256": "ac8525f999f5f87546146b3a79b716a4b8f83082af601a8dbcff89afdf1c114c",
+  "pillow_libwebp_version": "1.6.0",
+  "pillow_version": "12.3.0",
+  "pinned_libwebp_revision": "1844042d1ca751e62e61df7617dba19c98588339",
+  "pinned_libwebp_version_packed": 67072,
+  "schema": 1
+}

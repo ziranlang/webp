@@ -1,0 +1,25 @@
+#import "vp8_block_shared"
+#program_export
+SelfTest :: () -> s32 {
+    bytes: [300]u8
+    bytes[0] = 16; bytes[1] = 16; bytes[3] = 157; bytes[4] = 1; bytes[5] = 42; bytes[6] = 17; bytes[8] = 19
+    hash := BlockHash(bytes[:])
+    if hash != cast(u64)5277948186864631301 { return 1 } // independent pinned oracle
+    header := ReadVp8Header(BorrowBytes(bytes[:]), DefaultLimits(), null)
+    top: [4]u8; left: [4]u8
+    block := VReadModes(*header, top[:], left[:], null)
+    if block.error.code != DecodeOK || !block.is_i4x4 || block.segment != 0 || block.uv_mode != 0 { return 2 }
+    token: Cancellation; Cancel(*token)
+    if VReadModes(*header, top[:], left[:], *token).error.code != DecodeCancelled { return 3 }
+    if VReadModes(*header, top[:3], left[:], null).error.code != InvalidInput { return 4 }
+    top[0] = 10
+    if VReadModes(*header, top[:], left[:], null).error.code != InvalidInput { return 5 }
+    top[0] = 0
+    coefficients: [384]s16; top_nz: Vp8Nonzero; left_nz: Vp8Nonzero
+    reader := *header.partitions[0]
+    if VReadResidual(*header, reader, *block, *top_nz, *left_nz, coefficients[:383], null).code != OutputTooSmall { return 6 }
+    if VReadResidual(*header, reader, *block, *top_nz, *left_nz, coefficients[:], *token).code != DecodeCancelled { return 7 }
+    return 0
+}
+#program_export
+main :: () -> s32 { return SelfTest() }

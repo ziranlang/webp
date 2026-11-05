@@ -1,0 +1,47 @@
+using Header :: #import "alpha"
+#import "image_codec/buffer"
+#import "std/vec"
+Stream :: #import "lstream"
+// Private scratch plane. The enclosing decoder owns the worker lease and must
+// release reserved_bytes after freeing/consuming plane.storage. This does not
+// transfer a native pointer or create a second public pixel representation.
+AlphaPlaneResult :: struct { plane: Plane; reserved_bytes: s64; error: DecodeError; }
+AlphaFailure :: (error: DecodeError) -> AlphaPlaneResult { result: AlphaPlaneResult; result.error = error; return result }
+
+ReadAlphaPlaneInner :: (input: BorrowedBytes, width: s32, height: s32, options: *DecodeOptions) -> AlphaPlaneResult {
+    header := ReadAlphaHeader(input, width, height, options.limits)
+    if header.error.code != DecodeOK { return AlphaFailure(header.error) }
+    decoded: Stream.LosslessWords
+    if header.compression == 1 {
+        bits: Stream.LosslessBits; bits.data = header.residual.data; bits.base_offset = 1
+        received := Stream.LStream(*bits, width, height, true, options)
+        if received.error.code != DecodeOK { return AlphaFailure(received.error) }
+        VecSwap(decoded.words, received.words)
+        decoded.reserved_bytes = received.reserved_bytes
+    }
+    storage: Vec(u8)
+    count := cast(s64)width * height
+    error := ReserveWorkingBytes(options.workers, count, options.cancellation)
+    if error.code != DecodeOK { return AlphaFailure(error) }
+    if !VecResizeBounded(storage, count, count) { return AlphaFailure(Error(AllocationFailed)) }
+    for row: 0..height - 1 {
+        error = CancellationError(options.cancellation)
+        if error.code != DecodeOK { return AlphaFailure(error) }
+        for x: 0..width - 1 {
+            at := cast(s64)row * width + x
+            storage[at] = ifx header.compression == 0 then header.residual.data[at] else cast(u8)(decoded.words[at] >> cast(u32)8)
+        }
+    }
+    VecFree(decoded.words); unused ReleaseWorkingBytes(options.workers, decoded.reserved_bytes)
+    error = UnfilterAlpha(VecSlice(storage, 0, storage.count), width, height, header.filter, options.cancellation)
+    if error.code != DecodeOK { return AlphaFailure(error) }
+    reserved := storage.capacity
+    return AlphaPlaneResult.{Plane.{width, height, cast(s64)width, 1, storage}, reserved, Error(DecodeOK)}
+}
+ReadAlphaPlane :: (input: BorrowedBytes, width: s32, height: s32, options: *DecodeOptions) -> AlphaPlaneResult {
+    if options == null || options.workers == null { return AlphaFailure(Error(InvalidInput)) }
+    before := options.workers.working_bytes
+    result := ReadAlphaPlaneInner(input, width, height, options)
+    unused ReleaseWorkingBytes(options.workers, options.workers.working_bytes - before - result.reserved_bytes)
+    return result
+}

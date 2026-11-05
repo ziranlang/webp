@@ -1,0 +1,20 @@
+#import "vp8_header_shared"
+#program_export
+SelfTest :: () -> s32 {
+    bytes: [52]u8
+    bytes[0] = 16; bytes[1] = 4; bytes[3] = 157; bytes[4] = 1; bytes[5] = 42; bytes[6] = 17; bytes[8] = 19
+    header := ReadVp8Header(BorrowBytes(bytes[:]), DefaultLimits(), null)
+    if !header.is_ok || header.width != 17 || header.height != 19 || header.quantizers[0].y2_ac != 8 { return 1 }
+    if HeaderHash(*header) != cast(u64)16195851166751925676 { return 2 } // independent pinned oracle
+    token: Cancellation; Cancel(*token)
+    if ReadVp8Header(BorrowBytes(bytes[:]), DefaultLimits(), *token).error.code != DecodeCancelled { return 3 }
+    if ReadVp8Header(BorrowBytes(bytes[:20]), DefaultLimits(), null).error.code != TruncatedInput { return 4 }
+    bytes[3] = 0
+    if ReadVp8Header(BorrowBytes(bytes[:]), DefaultLimits(), null).error.code != MalformedInput { return 5 }
+    bytes[3] = 157
+    limits := DefaultLimits(); limits.max_width = 16
+    if ReadVp8Header(BorrowBytes(bytes[:]), limits, null).error.code != LimitExceeded { return 6 }
+    return 0
+}
+#program_export
+main :: () -> s32 { return SelfTest() }

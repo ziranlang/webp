@@ -1,0 +1,16 @@
+#import "webp_private/vfilter"
+#program_export
+SelfTest :: () -> s32 {
+    data: [1024]u8; state: u32 = 305419896
+    for i: 0..1023 { state = state * cast(u32)1664525 + cast(u32)1013904223; data[i] = 120 + cast(u8)((state >> cast(u32)24) & cast(u32)15) }
+    if VFilterEdge(data[:], 132, 32, 1, 16, 16, 255, 255, false, true).code != DecodeOK { return 1 }
+    hash: u64 = 14695981039346656037
+    for i: 0..1023 { hash = (hash ^ cast(u64)data[i]) * cast(u64)1099511628211 }
+    if hash != cast(u64)14346941024493348374 { return 2 } // independent pinned oracle
+    if VFilterEdge(data[:], 132, 32, 1, 17, 16, 16, 1, false, true).code != InvalidInput { return 3 }
+    if VFilterEdge(data[:], 0, 32, 1, 16, 16, 16, 1, false, true).code != OutputTooSmall { return 4 }
+    if VFilterEdge(data[:], 132, 9223372036854775807, 1, 16, 16, 16, 1, false, true).code != OutputTooSmall { return 5 }
+    return 0
+}
+#program_export
+main :: () -> s32 { return SelfTest() }

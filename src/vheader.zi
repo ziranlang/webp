@@ -1,0 +1,129 @@
+using Bits :: #import "vbits"
+using Images :: #import "image_codec/api"
+Tables :: #import "vtables"
+Vp8Quant :: struct { y_dc: s32; y_ac: s32; y2_dc: s32; y2_ac: s32; uv_dc: s32; uv_ac: s32; }
+// Borrowed keyframe state. No entropy/pixel allocations and no native calls.
+// reader remains positioned at the first macroblock mode after this header.
+Vp8Header :: struct {
+    is_ok: bool
+    width: s32
+    height: s32
+    profile: s32
+    color_space: bool
+    clamp_type: bool
+    reader: Vp8Bits
+    partitions: [8]Vp8Bits
+    partition_count: s32
+    segmentation: bool
+    update_map: bool
+    absolute_segments: bool
+    segment_quant: [4]s32
+    segment_filter: [4]s32
+    segment_probabilities: [3]s32
+    simple_filter: bool
+    filter_level: s32
+    sharpness: s32
+    filter_delta: bool
+    reference_delta: [4]s32
+    mode_delta: [4]s32
+    quantizers: [4]Vp8Quant
+    coefficient_probabilities: [1056]u8
+    use_skip: bool
+    skip_probability: s32
+    error: DecodeError
+}
+VHeaderFailure :: (error: DecodeError) -> Vp8Header { result: Vp8Header; result.error = error; return result }
+VLittle :: (bytes: []u8, at: s64, count: s32) -> u32 {
+    value: u32
+    for i: 0..count - 1 { value |= cast(u32)bytes[at + i] << cast(u32)(i * 8) }
+    return value
+}
+VQuantIndex :: (value: s32, maximum: s32 = 127) -> s32 { return ifx value < 0 then 0 else ifx value > maximum then maximum else value }
+VMakeQuant :: (quantizer: s32, deltas: []s32) -> Vp8Quant {
+    result: Vp8Quant
+    result.y_dc = Tables.Vp8DcQuant[VQuantIndex(quantizer + deltas[0])]
+    result.y_ac = Tables.Vp8AcQuant[VQuantIndex(quantizer)]
+    result.y2_dc = Tables.Vp8DcQuant[VQuantIndex(quantizer + deltas[1])] * 2
+    result.y2_ac = (Tables.Vp8AcQuant[VQuantIndex(quantizer + deltas[2])] * 101581) >> 16
+    if result.y2_ac < 8 { result.y2_ac = 8 }
+    result.uv_dc = Tables.Vp8DcQuant[VQuantIndex(quantizer + deltas[3], 117)]
+    result.uv_ac = Tables.Vp8AcQuant[VQuantIndex(quantizer + deltas[4])]
+    return result
+}
+ReadVp8Header :: (input: BorrowedBytes, limits: DecodeLimits, token: *Cancellation, base_offset: s64 = 0) -> Vp8Header {
+    error := ValidateInputSize(input.data.count, limits)
+    if error.code != DecodeOK { return VHeaderFailure(error) }
+    error = CancellationError(token); if error.code != DecodeOK { return VHeaderFailure(error) }
+    bytes := input.data
+    if base_offset < 0 || base_offset > 9223372036854775807 - bytes.count { return VHeaderFailure(Error(InvalidInput)) }
+    if bytes.count < 10 { return VHeaderFailure(Error(TruncatedInput, base_offset + bytes.count)) }
+    tag := VLittle(bytes, 0, 3)
+    if (tag & cast(u32)1) != cast(u32)0 || (tag & cast(u32)16) == cast(u32)0 { return VHeaderFailure(Error(UnsupportedCapability, base_offset)) }
+    if bytes[3] != 157 || bytes[4] != 1 || bytes[5] != 42 { return VHeaderFailure(Error(MalformedInput, base_offset + 3)) }
+    result: Vp8Header
+    result.profile = cast(s32)((tag >> cast(u32)1) & cast(u32)7)
+    if result.profile > 3 { return VHeaderFailure(Error(UnsupportedCapability, base_offset)) }
+    width := VLittle(bytes, 6, 2); height := VLittle(bytes, 8, 2)
+    if (width >> cast(u32)14) != cast(u32)0 || (height >> cast(u32)14) != cast(u32)0 { return VHeaderFailure(Error(UnsupportedCapability, base_offset + 6)) }
+    result.width = cast(s32)width; result.height = cast(s32)height
+    error = ValidateDimensions(result.width, result.height, limits)
+    if error.code != DecodeOK { return VHeaderFailure(error) }
+    first_size := cast(s64)(tag >> cast(u32)5)
+    if first_size == 0 || first_size > bytes.count - 10 { return VHeaderFailure(Error(TruncatedInput, base_offset + bytes.count)) }
+    result.reader = Vp8Reader(bytes[10:10 + first_size], base_offset + 10)
+    reader := *result.reader
+    result.color_space = VRead(reader) != 0; result.clamp_type = VRead(reader) != 0
+    result.absolute_segments = true
+    for i: 0..2 { result.segment_probabilities[i] = 255 }
+    result.segmentation = VRead(reader) != 0
+    if result.segmentation {
+        result.update_map = VRead(reader) != 0
+        if VRead(reader) != 0 {
+            result.absolute_segments = VRead(reader) != 0
+            for i: 0..3 { if VRead(reader) != 0 { result.segment_quant[i] = VSigned(reader, 7) } }
+            for i: 0..3 { if VRead(reader) != 0 { result.segment_filter[i] = VSigned(reader, 6) } }
+        }
+        if result.update_map {
+            for i: 0..2 { if VRead(reader) != 0 { result.segment_probabilities[i] = cast(s32)VValue(reader, 8) } }
+        }
+    }
+    result.simple_filter = VRead(reader) != 0
+    result.filter_level = cast(s32)VValue(reader, 6); result.sharpness = cast(s32)VValue(reader, 3)
+    result.filter_delta = VRead(reader) != 0
+    if result.filter_delta && VRead(reader) != 0 {
+        for i: 0..3 { if VRead(reader) != 0 { result.reference_delta[i] = VSigned(reader, 6) } }
+        for i: 0..3 { if VRead(reader) != 0 { result.mode_delta[i] = VSigned(reader, 6) } }
+    }
+    result.partition_count = 1 << cast(s32)VValue(reader, 2)
+    at := 10 + first_size
+    table_bytes := cast(s64)(result.partition_count - 1) * 3
+    if table_bytes > bytes.count - at { return VHeaderFailure(Error(TruncatedInput, base_offset + at)) }
+    sizes_at := at; at += table_bytes
+    for i: 0..result.partition_count - 1 {
+        count := ifx i + 1 == result.partition_count then bytes.count - at else cast(s64)VLittle(bytes, sizes_at + i * 3, 3)
+        if count > bytes.count - at || i + 1 == result.partition_count && count == 0 { return VHeaderFailure(Error(TruncatedInput, base_offset + at)) }
+        result.partitions[i] = Vp8Reader(bytes[at:at + count], base_offset + at)
+        // Empty earlier partitions are allowed if no coefficients use them.
+        if count != 0 && result.partitions[i].error.code != DecodeOK { return VHeaderFailure(result.partitions[i].error) }
+        at += count
+    }
+    base_quantizer := cast(s32)VValue(reader, 7)
+    deltas: [5]s32
+    for i: 0..4 { if VRead(reader) != 0 { deltas[i] = VSigned(reader, 4) } }
+    for i: 0..3 {
+        quantizer := ifx result.segmentation then result.segment_quant[i] else base_quantizer
+        if result.segmentation && !result.absolute_segments { quantizer += base_quantizer }
+        result.quantizers[i] = VMakeQuant(quantizer, deltas[:])
+    }
+    unused VRead(reader) // keyframe probability refresh has no prior-frame state
+    for i: 0..1055 {
+        if i % 64 == 0 { error = CancellationError(token); if error.code != DecodeOK { return VHeaderFailure(error) } }
+        value := ifx VRead(reader, cast(s32)Tables.Vp8CoefficientUpdates(cast(s32)i)) != 0 then cast(u8)VValue(reader, 8) else Tables.Vp8CoefficientDefaults(cast(s32)i)
+        result.coefficient_probabilities[i] = value
+    }
+    result.use_skip = VRead(reader) != 0
+    if result.use_skip { result.skip_probability = cast(s32)VValue(reader, 8) }
+    if reader.error.code != DecodeOK { return VHeaderFailure(reader.error) }
+    result.is_ok = true; result.error = Error(DecodeOK)
+    return result
+}

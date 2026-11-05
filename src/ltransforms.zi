@@ -1,0 +1,125 @@
+using Contracts :: #import "image_codec/api"
+// Internal ARGB code words follow the bitstream's component order. Public
+// output remains std/image.Image RGBA8; these leaf kernels allocate nothing.
+LChannel :: (word: u32, channel: s32) -> s32 { return cast(s32)((word >> cast(u32)(channel * 8)) & cast(u32)255) }
+LAdd :: (left: u32, right: u32) -> u32 {
+    result: u32
+    for channel: 0..3 {
+        value := (LChannel(left, cast(s32)channel) + LChannel(right, cast(s32)channel)) & 255
+        result |= cast(u32)value << cast(u32)(channel * 8)
+    }
+    return result
+}
+LAverage :: (left: u32, right: u32) -> u32 { return (left & right) + (((left ^ right) & cast(u32)4278124286) >> cast(u32)1) }
+LAbs :: (value: s32) -> s32 { return ifx value < 0 then -value else value }
+LClamp :: (value: s32) -> s32 { return ifx value < 0 then 0 else ifx value > 255 then 255 else value }
+LPredict :: (mode: s32, left: u32, top: u32, top_left: u32, top_right: u32) -> u32 {
+    if mode == 0 { return cast(u32)4278190080 }
+    if mode == 1 { return left }
+    if mode == 2 { return top }
+    if mode == 3 { return top_right }
+    if mode == 4 { return top_left }
+    if mode == 5 { return LAverage(LAverage(left, top_right), top) }
+    if mode == 6 { return LAverage(left, top_left) }
+    if mode == 7 { return LAverage(left, top) }
+    if mode == 8 { return LAverage(top_left, top) }
+    if mode == 9 { return LAverage(top, top_right) }
+    if mode == 10 { return LAverage(LAverage(left, top_left), LAverage(top, top_right)) }
+    if mode == 11 {
+        left_error: s32; top_error: s32
+        for channel: 0..3 {
+            left_error += LAbs(LChannel(top, cast(s32)channel) - LChannel(top_left, cast(s32)channel))
+            top_error += LAbs(LChannel(left, cast(s32)channel) - LChannel(top_left, cast(s32)channel))
+        }
+        return ifx left_error < top_error then left else top
+    }
+    result: u32
+    for channel: 0..3 {
+        a := LChannel(left, cast(s32)channel); b := LChannel(top, cast(s32)channel); c := LChannel(top_left, cast(s32)channel)
+        value: s32
+        if mode == 12 { value = LClamp(a + b - c) }
+        else { average := (a + b) / 2; value = LClamp(average + (average - c) / 2) }
+        result |= cast(u32)value << cast(u32)(channel * 8)
+    }
+    return result
+}
+LDelta :: (coefficient: s32, component: s32) -> s32 {
+    signed_coefficient := ifx coefficient >= 128 then coefficient - 256 else coefficient
+    signed_component := ifx component >= 128 then component - 256 else component
+    return (signed_coefficient * signed_component) >> 5
+}
+LColorWord :: (word: u32, coefficients: u32) -> u32 {
+    green := LChannel(word, 1)
+    red := (LChannel(word, 2) + LDelta(LChannel(coefficients, 0), green)) & 255
+    blue := (LChannel(word, 0) + LDelta(LChannel(coefficients, 1), green) + LDelta(LChannel(coefficients, 2), red)) & 255
+    return (word & cast(u32)4278255360) | (cast(u32)red << cast(u32)16) | cast(u32)blue
+}
+LMapDimensions :: (width: s32, height: s32, bits: s32, count: s64) -> (columns: s32, error: DecodeError) {
+    if width <= 0 || height <= 0 || bits < 2 || bits > 9 { return 0, Error(MalformedInput) }
+    block := 1 << bits
+    columns := cast(s32)((cast(s64)width + block - 1) / block)
+    rows := cast(s32)((cast(s64)height + block - 1) / block)
+    if count < cast(s64)columns * rows { return 0, Error(TruncatedInput) }
+    return columns, Error(DecodeOK)
+}
+LInversePredictor :: (words: []u32, width: s32, height: s32, modes: []u32, bits: s32, token: *Cancellation) -> DecodeError {
+    columns, error := LMapDimensions(width, height, bits, modes.count)
+    if error.code != DecodeOK { return error }
+    if words.count < cast(s64)width * height { return Error(TruncatedInput) }
+    for y: 0..height - 1 {
+        error = CancellationError(token); if error.code != DecodeOK { return error }
+        for x: 0..width - 1 {
+            at := cast(s64)y * width + x
+            prediction: u32 = cast(u32)4278190080
+            if y == 0 { if x != 0 { prediction = words[at - 1] } }
+            else if x == 0 { prediction = words[at - width] }
+            else {
+                mode := LChannel(modes[(y >> bits) * columns + (x >> bits)], 1) & 15
+                if mode > 13 { return Error(MalformedInput) }
+                top_right := ifx x + 1 < width then words[at - width + 1] else words[cast(s64)y * width]
+                prediction = LPredict(mode, words[at - 1], words[at - width], words[at - width - 1], top_right)
+            }
+            words[at] = LAdd(words[at], prediction)
+        }
+    }
+    return Error(DecodeOK)
+}
+LInverseColor :: (words: []u32, width: s32, height: s32, coefficients: []u32, bits: s32, token: *Cancellation) -> DecodeError {
+    columns, error := LMapDimensions(width, height, bits, coefficients.count)
+    if error.code != DecodeOK { return error }
+    if words.count < cast(s64)width * height { return Error(TruncatedInput) }
+    for y: 0..height - 1 {
+        error = CancellationError(token); if error.code != DecodeOK { return error }
+        for x: 0..width - 1 {
+            at := cast(s64)y * width + x
+            words[at] = LColorWord(words[at], coefficients[(y >> bits) * columns + (x >> bits)])
+        }
+    }
+    return Error(DecodeOK)
+}
+LInverseGreen :: (words: []u32, token: *Cancellation) -> DecodeError {
+    for i: 0..words.count - 1 {
+        if i % 4096 == 0 { error := CancellationError(token); if error.code != DecodeOK { return error } }
+        green := cast(u32)LChannel(words[i], 1)
+        words[i] = LAdd(words[i], (green << cast(u32)16) | green)
+    }
+    return Error(DecodeOK)
+}
+LExpandPalette :: (palette: []u32) { for i: 1..palette.count - 1 { palette[i] = LAdd(palette[i], palette[i - 1]) } }
+LInverseIndex :: (input: []u32, output: []u32, width: s32, height: s32, palette: []u32, width_bits: s32, token: *Cancellation) -> DecodeError {
+    if width <= 0 || height <= 0 || palette.count <= 0 || palette.count > 256 || width_bits < 0 || width_bits > 3 { return Error(MalformedInput) }
+    packed := 1 << width_bits
+    input_width := cast(s32)((cast(s64)width + packed - 1) / packed)
+    if input.count < cast(s64)input_width * height || output.count < cast(s64)width * height { return Error(TruncatedInput) }
+    index_bits := 8 >> width_bits
+    mask := (1 << index_bits) - 1
+    for y: 0..height - 1 {
+        error := CancellationError(token); if error.code != DecodeOK { return error }
+        for x: 0..width - 1 {
+            green := LChannel(input[cast(s64)y * input_width + (x >> width_bits)], 1)
+            index := (green >> ((x & (packed - 1)) * index_bits)) & mask
+            output[cast(s64)y * width + x] = ifx index < palette.count then palette[index] else cast(u32)0
+        }
+    }
+    return Error(DecodeOK)
+}

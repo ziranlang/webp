@@ -1,0 +1,59 @@
+using Errors :: #import "image_codec/errors"
+VMul1 :: (value: s32) -> s32 { return cast(s32)((cast(s64)value * 20091) >> 16) + value }
+VMul2 :: (value: s32) -> s32 { return cast(s32)((cast(s64)value * 35468) >> 16) }
+VClip :: (value: s32) -> u8 { return cast(u8)(ifx value < 0 then 0 else ifx value > 255 then 255 else value) }
+
+// 4x4 inverse integer DCT and reconstruction. Multiplication widens before
+// shifting, avoiding signed-overflow dependence on adversarial coefficients.
+VInverseDCT :: (coefficients: []s16, pixels: []u8, stride: s64) -> DecodeError {
+    if coefficients.count < 16 { return Error(TruncatedInput) }
+    if stride < 4 { return Error(InvalidInput) }
+    if pixels.count < 4 || stride > (pixels.count - 4) / 3 { return Error(OutputTooSmall) }
+    // RFC6386 14.4 stores the first pass in signed 16-bit slots. Keep
+    // arithmetic wide, then make that narrowing explicit at the store.
+    temporary: [16]s16
+    for column: 0..3 {
+        a := cast(s32)coefficients[column] + cast(s32)coefficients[column + 8]
+        b := cast(s32)coefficients[column] - cast(s32)coefficients[column + 8]
+        c := VMul2(cast(s32)coefficients[column + 4]) - VMul1(cast(s32)coefficients[column + 12])
+        d := VMul1(cast(s32)coefficients[column + 4]) + VMul2(cast(s32)coefficients[column + 12])
+        temporary[column * 4] = cast(s16)(a + d); temporary[column * 4 + 1] = cast(s16)(b + c)
+        temporary[column * 4 + 2] = cast(s16)(b - c); temporary[column * 4 + 3] = cast(s16)(a - d)
+    }
+    for row: 0..3 {
+        dc := cast(s32)temporary[row] + 4
+        a := dc + cast(s32)temporary[row + 8]; b := dc - cast(s32)temporary[row + 8]
+        c := VMul2(cast(s32)temporary[row + 4]) - VMul1(cast(s32)temporary[row + 12])
+        d := VMul1(cast(s32)temporary[row + 4]) + VMul2(cast(s32)temporary[row + 12])
+        at := row * stride
+        pixels[at] = VClip(cast(s32)pixels[at] + ((a + d) >> 3))
+        pixels[at + 1] = VClip(cast(s32)pixels[at + 1] + ((b + c) >> 3))
+        pixels[at + 2] = VClip(cast(s32)pixels[at + 2] + ((b - c) >> 3))
+        pixels[at + 3] = VClip(cast(s32)pixels[at + 3] + ((a - d) >> 3))
+    }
+    return Error(DecodeOK)
+}
+// Natural 4x4 output order; the enclosing macroblock decoder places each
+// value in the corresponding luma block's DC coefficient slot.
+VInverseWHT :: (coefficients: []s16, output: []s16) -> DecodeError {
+    if coefficients.count < 16 { return Error(TruncatedInput) }
+    if output.count < 16 { return Error(OutputTooSmall) }
+    // RFC6386 14.3 also narrows the WHT inter-pass storage to signed16.
+    temporary: [16]s16
+    for column: 0..3 {
+        a := cast(s32)coefficients[column] + cast(s32)coefficients[column + 12]
+        b := cast(s32)coefficients[column + 4] + cast(s32)coefficients[column + 8]
+        c := cast(s32)coefficients[column + 4] - cast(s32)coefficients[column + 8]
+        d := cast(s32)coefficients[column] - cast(s32)coefficients[column + 12]
+        temporary[column] = cast(s16)(a + b); temporary[column + 8] = cast(s16)(a - b)
+        temporary[column + 4] = cast(s16)(d + c); temporary[column + 12] = cast(s16)(d - c)
+    }
+    for row: 0..3 {
+        at := row * 4; dc := cast(s32)temporary[at] + 3
+        a := dc + cast(s32)temporary[at + 3]; b := cast(s32)temporary[at + 1] + cast(s32)temporary[at + 2]
+        c := cast(s32)temporary[at + 1] - cast(s32)temporary[at + 2]; d := dc - cast(s32)temporary[at + 3]
+        output[at] = cast(s16)((a + b) >> 3); output[at + 1] = cast(s16)((d + c) >> 3)
+        output[at + 2] = cast(s16)((a - b) >> 3); output[at + 3] = cast(s16)((d - c) >> 3)
+    }
+    return Error(DecodeOK)
+}

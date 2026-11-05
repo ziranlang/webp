@@ -1,0 +1,33 @@
+using ABI :: #import "native_api"
+#scope_file
+codec :: #system_library "imagewebp";
+NativeVersion :: () -> s32 #foreign codec "WebPGetDecoderVersion";
+NativeInto :: (data: *u8, size: usize, output: *u8, capacity: usize, stride: s32) -> *u8 #foreign codec "WebPDecodeRGBAInto";
+NativeOptionsInit :: (options: *NativeOptions, abi: s32) -> s32 #foreign codec "WebPAnimDecoderOptionsInitInternal";
+NativeNew :: (data: *NativeSource, options: *NativeOptions, abi: s32) -> *void #foreign codec "WebPAnimDecoderNewInternal";
+NativeGetInfo :: (decoder: *void, info: *NativeInfo) -> s32 #foreign codec "WebPAnimDecoderGetInfo";
+NativeNext :: (decoder: *void, pixels: **u8, timestamp: *s32) -> s32 #foreign codec "WebPAnimDecoderGetNext";
+NativeDelete :: (decoder: *void) #foreign codec "WebPAnimDecoderDelete";
+StaticVersion :: () -> s32 { return NativeVersion() }
+StaticInto :: (data: *u8, size: usize, output: *u8, capacity: usize, stride: s32) -> *u8 { return NativeInto(data, size, output, capacity, stride) }
+StaticOptionsInit :: (options: *NativeOptions, abi: s32) -> s32 { return NativeOptionsInit(options, abi) }
+StaticNew :: (data: *NativeSource, options: *NativeOptions, abi: s32) -> *void { return NativeNew(data, options, abi) }
+StaticGetInfo :: (decoder: *void, info: *NativeInfo) -> s32 { return NativeGetInfo(decoder, info) }
+StaticNext :: (decoder: *void, pixels: **u8, timestamp: *s32) -> s32 { return NativeNext(decoder, pixels, timestamp) }
+StaticDelete :: (decoder: *void) { NativeDelete(decoder) }
+StaticApi :: () -> WebpNativeApi {
+    api: WebpNativeApi
+    api.version = StaticVersion; api.decode_into = StaticInto
+    api.options_init = StaticOptionsInit; api.new_decoder = StaticNew
+    api.get_info = StaticGetInfo; api.next_frame = StaticNext; api.delete_decoder = StaticDelete
+    return api
+}
+#scope_export
+LibwebpCapabilities :: () -> WebpEngineCapabilities { return NativeWebpCapabilities() }
+LibwebpVersion :: () -> s32 { return NativeVersion() }
+LibwebpDecode :: (input: BorrowedBytes, options: DecodeOptions) -> DecodeResult {
+    api := StaticApi(); return WebpNativeDecode(*api, input, options)
+}
+LibwebpDecodeInto :: (input: BorrowedBytes, output: OutputBuffer, options: DecodeOptions) -> WebpOutputResult {
+    api := StaticApi(); return WebpNativeDecodeInto(*api, input, output, options)
+}

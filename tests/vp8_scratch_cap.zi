@@ -1,0 +1,15 @@
+using Codec :: #import "webp/authored"
+Synthetic :: #import "authored_portable"
+#program_export
+ScratchProbe :: (maximum: s64, cancelled: bool) -> s64 {
+    data := Synthetic.ZeroFrame(17, 19)
+    pixels: [1292]u8
+    options := WebpDefaultOptions(); options.limits.max_working_bytes = maximum
+    budget := NewWorkerBudget(options.limits); options.workers = *budget
+    token: Cancellation
+    if cancelled { Cancel(*token); options.cancellation = *token }
+    result := WebpAuthoredDecodeInto(BorrowBytes(data[:]), OutputBuffer.{pixels[:], 68}, options)
+    code := result.error.code
+    if budget.working_bytes != 0 || budget.active_workers != 0 { return -100 }
+    return ifx code == DecodeOK then budget.peak_working_bytes else -cast(s64)code
+}

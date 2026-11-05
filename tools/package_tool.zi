@@ -1,0 +1,35 @@
+#import "std/process_run_linux"
+#import "std/environment_linux"
+#import "std/byte_text_linux"
+#import "std/stdio_linux"
+
+Join :: (root: string, tail: string) -> string {
+    bytes: Vec(u8)
+    if !BuilderAppend(bytes, root) || !BuilderAppend(bytes, tail) { return "" }
+    return BuilderFinish(bytes)
+}
+#program_export
+main :: (argc: s32, argv: **u8) -> s32 {
+    if argc < 3 || TextFromCString(argv[1]) != "artifact" || TextFromCString(argv[2]) != "libwebp" { unused PrintError("expected artifact libwebp --platform TARGET --output DIR\n"); return 2 }
+    platform: string; output: string; at: s32 = 3
+    while at < argc {
+        key := TextFromCString(argv[at]); at += 1
+        if at >= argc { return 2 }
+        value := TextFromCString(argv[at]); at += 1
+        if key == "--platform" { platform = value }
+        else if key == "--output" { output = value }
+        else { return 2 }
+    }
+    package := EnvironmentText("ZIRAN_PACKAGE_ROOT")
+    toolchain := EnvironmentText("ZIRAN_TOOLCHAIN_ROOT")
+    if package.count == 0 || toolchain.count == 0 || output.count == 0 { unused PrintError("missing resolved package/toolchain/output\n"); return 2 }
+    // The current recipe is validated only on native Linux GNU x86-64.
+    if platform != "linux-x86_64-gnu" { unused PrintError("unsupported WebP artifact platform\n"); return 5 }
+    script := Join(package, "/native/artifact.sh")
+    command: [5]string = .["sh", script, toolchain, platform, output]
+    options: ProcessOptions
+    options.arguments = command[:]; options.directory = package
+    run: ProcessRun
+    if !RunProcess(options, *run) { return 127 }
+    return run.code
+}

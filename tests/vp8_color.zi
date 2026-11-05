@@ -1,0 +1,23 @@
+#import "webp_private/vcolor"
+#program_export
+SelfTest :: () -> s32 {
+    y: [2048]u8; u: [1024]u8; v: [1024]u8; output: [4096]u8
+    state: u32 = 305419896
+    for i: 0..2047 { state = state * cast(u32)1664525 + cast(u32)1013904223; y[i] = cast(u8)(state >> cast(u32)24) }
+    for i: 0..1023 { state = state * cast(u32)1664525 + cast(u32)1013904223; u[i] = cast(u8)(state >> cast(u32)24) }
+    for i: 0..1023 { state = state * cast(u32)1664525 + cast(u32)1013904223; v[i] = cast(u8)(state >> cast(u32)24) }
+    for i: 0..4095 { output[i] = 213 }
+    yp := PlaneView.{17,7,64,1,y[:]}; up := PlaneView.{9,4,32,1,u[:]}; vp := PlaneView.{9,4,32,1,v[:]}
+    buffer := OutputBuffer.{output[:],73}
+    if VConvert420(yp, up, vp, buffer, DefaultLimits(), null).code != DecodeOK { return 1 }
+    hash: u64 = 14695981039346656037
+    for i: 0..4095 { hash = (hash ^ cast(u64)output[i]) * cast(u64)1099511628211 }
+    if hash != cast(u64)1725461680888822177 { return 2 } // independent pinned oracle
+    token: Cancellation; Cancel(*token); output[0] = 67
+    if VConvert420(yp, up, vp, buffer, DefaultLimits(), *token).code != DecodeCancelled || output[0] != 67 { return 3 }
+    up.width = 8
+    if VConvert420(yp, up, vp, buffer, DefaultLimits(), null).code != InvalidInput { return 4 }
+    return 0
+}
+#program_export
+main :: () -> s32 { return SelfTest() }

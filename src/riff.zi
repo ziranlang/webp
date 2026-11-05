@@ -1,0 +1,153 @@
+using Engines :: #import "engine"
+WebpLossy :: 1;
+WebpLossless :: 2;
+WebpAnimation :: 3;
+MaxWebpChunks :: 65536;
+WebpProbeResult :: struct {
+    is_ok: bool
+    metadata: ImageMetadata
+    kind: s32
+    payload: BorrowedBytes
+    payload_offset: s64
+    alpha: BorrowedBytes
+    alpha_offset: s64
+    error: DecodeError
+}
+#scope_file
+WebpLE :: (bytes: []u8, at: s64, count: s32) -> u32 {
+    value: u32
+    for i: 0..count - 1 { value |= cast(u32)bytes[at + i] << cast(u32)(i * 8) }
+    return value
+}
+WebpTag :: (bytes: []u8, at: s64, tag: string) -> bool {
+    if at < 0 || at > bytes.count || tag.count > bytes.count - at { return false }
+    for i: 0..tag.count - 1 { if bytes[at + i] != tag[i] { return false } }
+    return true
+}
+ProbeFailure :: (code: s32, offset: s64 = -1) -> WebpProbeResult {
+    result: WebpProbeResult; result.error = Error(code, offset); return result
+}
+WebpPayloadDimensions :: (bytes: []u8, kind: s32) -> (width: s32, height: s32, alpha: bool, error: DecodeError) {
+    if kind == WebpLossless {
+        if bytes.count < 5 { return 0, 0, false, Error(TruncatedInput) }
+        if bytes[0] != 47 { return 0, 0, false, Error(MalformedInput) }
+        bits := WebpLE(bytes, 1, 4)
+        if (bits >> cast(u32)29) != cast(u32)0 { return 0, 0, false, Error(UnsupportedCapability) }
+        return cast(s32)(bits & cast(u32)16383) + 1, cast(s32)((bits >> cast(u32)14) & cast(u32)16383) + 1,
+               (bits & cast(u32)268435456) != cast(u32)0, Error(DecodeOK)
+    }
+    if bytes.count < 10 { return 0, 0, false, Error(TruncatedInput) }
+    tag := WebpLE(bytes, 0, 3)
+    if (tag & cast(u32)1) != cast(u32)0 || bytes[3] != 157 || bytes[4] != 1 || bytes[5] != 42 { return 0, 0, false, Error(MalformedInput) }
+    if ((tag >> cast(u32)1) & cast(u32)7) > cast(u32)3 { return 0, 0, false, Error(UnsupportedCapability) }
+    if (tag & cast(u32)16) == cast(u32)0 { return 0, 0, false, Error(MalformedInput) }
+    w := WebpLE(bytes, 6, 2); h := WebpLE(bytes, 8, 2)
+    if (w >> cast(u32)14) != cast(u32)0 || (h >> cast(u32)14) != cast(u32)0 { return 0, 0, false, Error(UnsupportedCapability) }
+    if (w & cast(u32)16383) == cast(u32)0 || (h & cast(u32)16383) == cast(u32)0 { return 0, 0, false, Error(MalformedInput) }
+    return cast(s32)(w & cast(u32)16383), cast(s32)(h & cast(u32)16383), false, Error(DecodeOK)
+}
+// One bounded frame subcontainer. No recursion and no allocation.
+WebpFrameCheck :: (frame: []u8, canvas_width: s32, canvas_height: s32) -> DecodeError {
+    if frame.count < 16 { return Error(TruncatedInput) }
+    x := cast(s64)WebpLE(frame, 0, 3) * 2; y := cast(s64)WebpLE(frame, 3, 3) * 2
+    width := cast(s64)WebpLE(frame, 6, 3) + 1; height := cast(s64)WebpLE(frame, 9, 3) + 1
+    if x + width > canvas_width || y + height > canvas_height || (frame[15] & cast(u8)252) != cast(u8)0 { return Error(MalformedInput) }
+    at: s64 = 16; chunks: s32; have_image: bool; have_alpha: bool
+    while at < frame.count {
+        chunks += 1
+        if chunks > MaxWebpChunks { return Error(LimitExceeded, at) }
+        if frame.count - at < 8 { return Error(TruncatedInput, at) }
+        count := cast(s64)WebpLE(frame, at + 4, 4)
+        if count > frame.count - at - 8 || (count & 1) > frame.count - at - 8 - count { return Error(TruncatedInput, at) }
+        body := frame[at + 8:at + 8 + count]
+        kind: s32 = ifx WebpTag(frame, at, "VP8L") then WebpLossless else ifx WebpTag(frame, at, "VP8 ") then WebpLossy else 0
+        if kind != 0 {
+            if have_image || kind == WebpLossless && have_alpha { return Error(MalformedInput, at) }
+            w, h, alpha, error := WebpPayloadDimensions(body, kind)
+            if error.code != DecodeOK { return error }
+            if w != width || h != height { return Error(MalformedInput, at) }
+            have_image = true
+        } else if WebpTag(frame, at, "ALPH") {
+            if have_alpha || have_image || count == 0 { return Error(MalformedInput, at) }
+            have_alpha = true
+        }
+        if (count & 1) != 0 && frame[at + 8 + count] != 0 { return Error(MalformedInput, at) }
+        at += 8 + count + (count & 1)
+    }
+    return Error(ifx have_image then DecodeOK else MalformedInput)
+}
+#scope_export
+// Prefix dispatch only. Structural validation remains WebpProbe's job; this
+// predicate accepts a RIFF/WEBP prefix even if its declared body is incomplete.
+WebpHasSignature :: (input: BorrowedBytes) -> bool {
+    return input.data.count >= 12 && WebpTag(input.data, 0, "RIFF") && WebpTag(input.data, 8, "WEBP")
+}
+WebpProbe :: (input: BorrowedBytes, limits: DecodeLimits) -> WebpProbeResult {
+    size_error := ValidateInputSize(input.data.count, limits)
+    if size_error.code != DecodeOK { return ProbeFailure(size_error.code) }
+    bytes := input.data
+    if bytes.count < 12 { return ProbeFailure(TruncatedInput, bytes.count) }
+    if !WebpTag(bytes, 0, "RIFF") || !WebpTag(bytes, 8, "WEBP") { return ProbeFailure(MalformedInput, 0) }
+    declared := cast(s64)WebpLE(bytes, 4, 4) + 8
+    if declared > bytes.count { return ProbeFailure(TruncatedInput, bytes.count) }
+    if declared != bytes.count || declared < 12 { return ProbeFailure(MalformedInput, 4) }
+    result: WebpProbeResult
+    result.metadata.source_bit_depth = 8
+    result.metadata.frame_count = 1
+    at: s64 = 12; chunks: s32; extended: bool; have_image: bool; anim_header: bool
+    flags: u8; frames: s32; metadata_bytes: s64
+    while at < declared {
+        chunks += 1
+        if chunks > MaxWebpChunks { return ProbeFailure(LimitExceeded, at) }
+        if declared - at < 8 { return ProbeFailure(TruncatedInput, at) }
+        count := cast(s64)WebpLE(bytes, at + 4, 4)
+        if count > declared - at - 8 || (count & 1) > declared - at - 8 - count { return ProbeFailure(TruncatedInput, at) }
+        body := bytes[at + 8:at + 8 + count]
+        if WebpTag(bytes, at, "VP8X") {
+            if extended || chunks != 1 || count != 10 { return ProbeFailure(MalformedInput, at) }
+            extended = true; flags = body[0]
+            if (flags & cast(u8)193) != cast(u8)0 || body[1] != 0 || body[2] != 0 || body[3] != 0 { return ProbeFailure(MalformedInput, at) }
+            result.metadata.width = cast(s32)WebpLE(body, 4, 3) + 1
+            result.metadata.height = cast(s32)WebpLE(body, 7, 3) + 1
+            result.metadata.has_alpha = (flags & cast(u8)16) != cast(u8)0
+            error := ValidateDimensions(result.metadata.width, result.metadata.height, limits)
+            if error.code != DecodeOK { return ProbeFailure(error.code, at) }
+        } else if WebpTag(bytes, at, "ANIM") {
+            if !extended || (flags & cast(u8)2) == cast(u8)0 || anim_header || have_image || count != 6 { return ProbeFailure(MalformedInput, at) }
+            anim_header = true; result.kind = WebpAnimation
+        } else if WebpTag(bytes, at, "ANMF") {
+            if !anim_header { return ProbeFailure(MalformedInput, at) }
+            frames += 1
+            if frames > limits.max_frames { return ProbeFailure(LimitExceeded, at) }
+            error := WebpFrameCheck(body, result.metadata.width, result.metadata.height)
+            if error.code != DecodeOK { return ProbeFailure(error.code, at) }
+        } else if WebpTag(bytes, at, "VP8L") || WebpTag(bytes, at, "VP8 ") {
+            if have_image || anim_header || extended && (flags & cast(u8)2) != cast(u8)0 { return ProbeFailure(MalformedInput, at) }
+            result.kind = ifx WebpTag(bytes, at, "VP8L") then WebpLossless else WebpLossy
+            width, height, alpha, error := WebpPayloadDimensions(body, result.kind)
+            if error.code != DecodeOK { return ProbeFailure(error.code, at) }
+            if extended && (result.metadata.width != width || result.metadata.height != height) { return ProbeFailure(MalformedInput, at) }
+            if result.kind == WebpLossless && result.alpha.data.count > 0 { return ProbeFailure(MalformedInput, at) }
+            result.metadata.width = width; result.metadata.height = height
+            result.metadata.has_alpha = result.metadata.has_alpha || alpha
+            result.payload = BorrowBytes(body); result.payload_offset = at + 8; have_image = true
+        } else if WebpTag(bytes, at, "ALPH") {
+            if !extended || (flags & cast(u8)16) == cast(u8)0 || result.alpha.data.count > 0 || have_image || anim_header || count == 0 { return ProbeFailure(MalformedInput, at) }
+            result.alpha = BorrowBytes(body); result.alpha_offset = at + 8
+        } else if WebpTag(bytes, at, "ICCP") || WebpTag(bytes, at, "EXIF") || WebpTag(bytes, at, "XMP ") {
+            metadata_bytes += count
+            if metadata_bytes > limits.max_metadata_bytes { return ProbeFailure(LimitExceeded, at) }
+        }
+        if (count & 1) != 0 && bytes[at + 8 + count] != 0 { return ProbeFailure(MalformedInput, at) }
+        at += 8 + count + (count & 1)
+    }
+    if anim_header {
+        if frames == 0 || have_image { return ProbeFailure(MalformedInput) }
+        result.metadata.frame_count = frames
+    } else if !have_image || extended && (flags & cast(u8)2) != cast(u8)0 { return ProbeFailure(MalformedInput) }
+    result.metadata.metadata_bytes = metadata_bytes
+    error := ValidateMetadata(result.metadata, limits)
+    if error.code != DecodeOK { return ProbeFailure(error.code) }
+    result.error = Error(DecodeOK); result.is_ok = true
+    return result
+}

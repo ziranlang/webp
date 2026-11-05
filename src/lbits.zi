@@ -1,0 +1,20 @@
+using Errors :: #import "image_codec/errors"
+using Traces :: #import "ltrace"
+LosslessBits :: struct { data: []u8; at: s64; value: u64; available: s32; error: DecodeError; base_offset: s64; trace: *LosslessTrace; }
+LFail :: (bits: *LosslessBits, code: s32) {
+    if bits.error.code == DecodeOK { bits.error = Error(code, bits.base_offset + bits.at) }
+}
+LRead :: (bits: *LosslessBits, count: s32) -> u32 {
+    if bits.error.code != DecodeOK { return 0 }
+    if count < 0 || count > 24 { LFail(bits, MalformedInput); return 0 }
+    if count == 0 { return 0 }
+    while bits.available < count {
+        if bits.at >= bits.data.count { LFail(bits, TruncatedInput); return 0 }
+        bits.value |= cast(u64)bits.data[bits.at] << cast(u64)bits.available
+        bits.at += 1; bits.available += 8
+    }
+    mask := (cast(u64)1 << cast(u64)count) - cast(u64)1
+    result := cast(u32)(bits.value & mask)
+    bits.value >>= cast(u64)count; bits.available -= count
+    return result
+}

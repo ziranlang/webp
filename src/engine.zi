@@ -1,0 +1,19 @@
+using Images :: #import "image_codec/api"
+LibwebpEngine :: 1;
+AuthoredStillEngine :: 2;
+WebpEngineCapabilities :: struct {
+    still_images: bool
+    first_animation_frame: bool
+    caller_owned_output: bool
+    interrupt_native_decode: bool
+    enforces_native_scratch_limit: bool
+    max_active_workers: s32
+}
+WebpOutputResult :: struct { is_ok: bool; metadata: ImageMetadata; error: DecodeError; }
+// Compatibility budget for existing native WebP paths. Generic callers can
+// instead pass DefaultOptions() or lower explicit limits.
+WebpDefaultOptions :: () -> DecodeOptions {
+    options := DefaultOptions()
+    options.limits.max_input_bytes = 2147483647
+    return options
+}

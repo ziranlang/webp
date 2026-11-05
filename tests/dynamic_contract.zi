@@ -1,0 +1,47 @@
+#import "webp/dynamic"
+#import "std/file"
+#import "std/vec"
+#import "std/image"
+#import "std/byte_text_linux"
+#import "std/stdio_linux"
+Path :: (root: string, name: string, extension: string) -> string {
+    text: Vec(u8)
+    unused BuilderAppend(text, root); unused BuilderAppend(text, "/webp/")
+    unused BuilderAppend(text, name); unused BuilderAppend(text, extension)
+    return BuilderFinish(text)
+}
+#program_export
+main :: (argc: s32, argv: **u8) -> s32 {
+    if argc != 3 { return 90 }
+    path := TextFromCString(argv[1]); corpus := TextFromCString(argv[2])
+    missing := OpenDynamicWebp("/nonexistent/ziran-image-codec/libimagewebp.so")
+    if missing.available { CloseDynamicWebp(*missing); return 1 }
+    incomplete := OpenDynamicWebp("libm.so.6")
+    if incomplete.available || incomplete.library != null { CloseDynamicWebp(*incomplete); return 2 }
+    engine := OpenDynamicWebp(path)
+    if !engine.available || DynamicWebpVersion(*engine) <= 0 { return 3 }
+    names: [4]string = .["lossy", "lossless", "lossy-alpha", "animated"]
+    for name: names {
+        encoded: Vec(u8); golden: Vec(u8)
+        if !ReadFileInto(Path(corpus, name, ".webp"), *encoded) || !ReadFileInto(Path(corpus, name, ".rgba"), *golden) { CloseDynamicWebp(*engine); return 4 }
+        options := WebpDefaultOptions()
+        workers := NewWorkerBudget(options.limits); options.workers = *workers
+        decoded := DynamicWebpDecode(*engine, BorrowBytes(VecSlice(encoded, 0, encoded.count)), options)
+        if !decoded.is_ok || !ImageValid(*decoded.image) || decoded.image.pixels.count != golden.count { CloseDynamicWebp(*engine); return 5 }
+        for i: 0..golden.count - 1 { if decoded.image.pixels[i] != golden[i] { CloseDynamicWebp(*engine); return 6 } }
+        if workers.active_workers != 0 || workers.peak_workers != 1 { CloseDynamicWebp(*engine); return 7 }
+    }
+    encoded: Vec(u8)
+    if !ReadFileInto(Path(corpus, "lossless", ".webp"), *encoded) { CloseDynamicWebp(*engine); return 8 }
+    input := BorrowBytes(VecSlice(encoded, 0, encoded.count))
+    independent := DynamicWebpDecode(*engine, input, WebpDefaultOptions())
+    if !independent.is_ok { CloseDynamicWebp(*engine); return 9 }
+    output: [24]u8
+    into := DynamicWebpDecodeInto(*engine, input, OutputBuffer.{output[:], 12}, WebpDefaultOptions())
+    if !into.is_ok || output[0] != independent.image.pixels[0] { CloseDynamicWebp(*engine); return 10 }
+    CloseDynamicWebp(*engine); CloseDynamicWebp(*engine)
+    if engine.available || engine.library != null || DynamicWebpVersion(*engine) != 0 || !ImageValid(*independent.image) { return 11 }
+    closed := DynamicWebpDecode(*engine, input, WebpDefaultOptions())
+    if closed.is_ok || closed.error.code != UnsupportedCapability { return 12 }
+    return 0
+}

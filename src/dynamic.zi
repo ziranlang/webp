@@ -1,0 +1,55 @@
+using ABI :: #import "native_api"
+#import "std/c_string"
+DynamicWebpEngine :: struct { library: *void; api: WebpNativeApi; available: bool; }
+#scope_file
+loader :: #system_library "dl";
+libc :: #system_library "c";
+OpenLibrary :: (name: *u8, flags: s32) -> *void #foreign loader "dlopen";
+LibrarySymbol :: (library: *void, name: *u8) -> *void #foreign loader "dlsym";
+CloseLibrary :: (library: *void) -> s32 #foreign loader "dlclose";
+CopySymbol :: (target: *void, source: *void, bytes: usize) -> *void #foreign libc "memcpy";
+Resolve :: (library: *void, target: *void, name: string) -> bool {
+    text: [96]u8
+    if !CopyCString(name, text[:]) { return false }
+    symbol := LibrarySymbol(library, *text[0])
+    if symbol == null { return false }
+    unused CopySymbol(target, cast(*void)*symbol, size_of(*void))
+    return true
+}
+#scope_export
+// Caller owns this library handle: do not copy it or close while decoding.
+// A missing/incompatible library is an explicit unavailable engine.
+OpenDynamicWebp :: (path: string) -> DynamicWebpEngine {
+    engine: DynamicWebpEngine
+    text: [4096]u8
+    if !CopyCString(path, text[:]) { return engine }
+    engine.library = OpenLibrary(*text[0], 2)
+    if engine.library == null { return engine }
+    engine.available = Resolve(engine.library, cast(*void)*engine.api.version, "WebPGetDecoderVersion") &&
+        Resolve(engine.library, cast(*void)*engine.api.decode_into, "WebPDecodeRGBAInto") &&
+        Resolve(engine.library, cast(*void)*engine.api.options_init, "WebPAnimDecoderOptionsInitInternal") &&
+        Resolve(engine.library, cast(*void)*engine.api.new_decoder, "WebPAnimDecoderNewInternal") &&
+        Resolve(engine.library, cast(*void)*engine.api.get_info, "WebPAnimDecoderGetInfo") &&
+        Resolve(engine.library, cast(*void)*engine.api.next_frame, "WebPAnimDecoderGetNext") &&
+        Resolve(engine.library, cast(*void)*engine.api.delete_decoder, "WebPAnimDecoderDelete")
+    if !engine.available { unused CloseLibrary(engine.library); engine.library = null }
+    return engine
+}
+CloseDynamicWebp :: (engine: *DynamicWebpEngine) {
+    if engine == null { return }
+    if engine.library != null { unused CloseLibrary(engine.library) }
+    engine.library = null; engine.available = false
+    empty: WebpNativeApi; engine.api = empty
+}
+DynamicWebpVersion :: (engine: *DynamicWebpEngine) -> s32 {
+    if engine == null || !engine.available { return 0 }
+    return engine.api.version()
+}
+DynamicWebpDecode :: (engine: *DynamicWebpEngine, input: BorrowedBytes, options: DecodeOptions) -> DecodeResult {
+    if engine == null || !engine.available { return DecodeFailure(Error(UnsupportedCapability)) }
+    return WebpNativeDecode(*engine.api, input, options)
+}
+DynamicWebpDecodeInto :: (engine: *DynamicWebpEngine, input: BorrowedBytes, output: OutputBuffer, options: DecodeOptions) -> WebpOutputResult {
+    if engine == null || !engine.available { result: WebpOutputResult; result.error = Error(UnsupportedCapability); return result }
+    return WebpNativeDecodeInto(*engine.api, input, output, options)
+}

@@ -1,0 +1,82 @@
+using Errors :: #import "image_codec/errors"
+Math :: #import "vtransform"
+VAvg2 :: (a: s32, b: s32) -> s32 { return (a + b + 1) >> 1 }
+VAvg3 :: (a: s32, b: s32, c: s32) -> s32 { return (a + 2 * b + c + 2) >> 2 }
+VNeighbor :: (side: []u8, index: s32, corner: s32) -> s32 {
+    if index < 0 { return corner }
+    return cast(s32)side[ifx index >= side.count then side.count - 1 else cast(s64)index]
+}
+VVerticalRight :: (top: []u8, left: []u8, corner: s32, x: s32, y: s32) -> s32 {
+    code := 2 * x - y
+    if code >= 0 {
+        n := code / 2
+        if (code & 1) == 0 { return VAvg2(VNeighbor(top, n - 1, corner), VNeighbor(top, n, corner)) }
+        return VAvg3(VNeighbor(top, n - 1, corner), VNeighbor(top, n, corner), VNeighbor(top, n + 1, corner))
+    }
+    n := -code
+    if n == 1 { return VAvg3(cast(s32)left[0], corner, cast(s32)top[0]) }
+    return VAvg3(VNeighbor(left, n - 1, corner), VNeighbor(left, n - 2, corner), VNeighbor(left, n - 3, corner))
+}
+VPredSpan :: (pixels: []u8, stride: s64, at: s64, size: s32) -> DecodeError {
+    right := ifx size == 4 then 8 else size
+    if stride < right || stride > pixels.count || at < 0 || at > pixels.count { return Error(OutputTooSmall) }
+    if at - stride < 1 || pixels.count - at < size { return Error(OutputTooSmall) }
+    column := at % stride
+    if column < 1 || column > stride - right || stride > (pixels.count - at - size) / (size - 1) { return Error(OutputTooSmall) }
+    return Error(DecodeOK)
+}
+// Allocation-free VP8 prediction, with a supplied padded top/left border.
+// Modes follow the bitstream's DC/TM/VE/HE/RD/VR/LD/VL/HD/HU numbering.
+// has_top/has_left select DC edge averaging for 8x8/16x16; all other modes use
+// the supplied virtual border. Only the requested block is written.
+VIntraPredict :: (pixels: []u8, stride: s64, at: s64, size: s32, mode: s32, has_top: bool = true, has_left: bool = true) -> DecodeError {
+    if size != 4 && size != 8 && size != 16 { return Error(InvalidInput) }
+    maximum := ifx size == 4 then 10 else 4
+    if mode < 0 || mode >= maximum { return Error(UnsupportedCapability) }
+    error := VPredSpan(pixels, stride, at, size)
+    if error.code != DecodeOK { return error }
+    top: [16]u8; left: [16]u8
+    count := ifx size == 4 then 8 else size
+    for i: 0..count - 1 { top[i] = pixels[at - stride + i] }
+    for i: 0..size - 1 { left[i] = pixels[at + i * stride - 1] }
+    corner := cast(s32)pixels[at - stride - 1]
+    dc: s32
+    if mode == 0 {
+        samples: s32
+        for i: 0..size - 1 {
+            if size == 4 || has_top { dc += cast(s32)top[i]; samples += 1 }
+            if size == 4 || has_left { dc += cast(s32)left[i]; samples += 1 }
+        }
+        dc = ifx samples == 0 then 128 else (dc + samples / 2) / samples
+    }
+    for y: 0..size - 1 {
+        for x: 0..size - 1 {
+            value: s32
+            if mode == 0 { value = dc }
+            else if mode == 1 { value = cast(s32)Math.VClip(cast(s32)left[y] + cast(s32)top[x] - corner) }
+            else if size != 4 { value = ifx mode == 2 then cast(s32)top[x] else cast(s32)left[y] }
+            else if mode == 2 { value = VAvg3(VNeighbor(top[:], cast(s32)x - 1, corner), cast(s32)top[x], cast(s32)top[x + 1]) }
+            else if mode == 3 { value = VAvg3(VNeighbor(left[:4], cast(s32)y - 1, corner), cast(s32)left[y], VNeighbor(left[:4], cast(s32)y + 1, corner)) }
+            else if mode == 4 {
+                diagonal := cast(s32)(x - y)
+                if diagonal >= 0 { value = VAvg3(VNeighbor(top[:8], diagonal - 2, corner), VNeighbor(top[:8], diagonal - 1, corner), VNeighbor(top[:8], diagonal, corner)) }
+                else { n := -diagonal; value = VAvg3(VNeighbor(left[:4], n, corner), VNeighbor(left[:4], n - 1, corner), VNeighbor(left[:4], n - 2, corner)) }
+                if diagonal == 0 { value = VAvg3(cast(s32)left[0], corner, cast(s32)top[0]) }
+            } else if mode == 5 { value = VVerticalRight(top[:8], left[:4], corner, cast(s32)x, cast(s32)y) }
+            else if mode == 6 { n := cast(s32)(x + y); value = VAvg3(cast(s32)top[n], cast(s32)top[n + 1], VNeighbor(top[:8], n + 2, corner)) }
+            else if mode == 7 {
+                n := cast(s32)(x + y / 2)
+                if (y & 1) == 0 { value = VAvg2(cast(s32)top[n], cast(s32)top[n + 1]) }
+                else { value = VAvg3(cast(s32)top[n], cast(s32)top[n + 1], cast(s32)top[n + 2]) }
+                if x == 3 && y >= 2 { value = VAvg3(cast(s32)top[y + 2], cast(s32)top[y + 3], cast(s32)top[y + 4]) }
+            } else if mode == 8 { value = VVerticalRight(left[:4], top[:8], corner, cast(s32)y, cast(s32)x) }
+            else {
+                n := cast(s32)(y + x / 2)
+                if (x & 1) == 0 { value = VAvg2(VNeighbor(left[:4], n, corner), VNeighbor(left[:4], n + 1, corner)) }
+                else { value = VAvg3(VNeighbor(left[:4], n, corner), VNeighbor(left[:4], n + 1, corner), VNeighbor(left[:4], n + 2, corner)) }
+            }
+            pixels[at + y * stride + x] = cast(u8)value
+        }
+    }
+    return Error(DecodeOK)
+}

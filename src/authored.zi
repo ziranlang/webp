@@ -1,0 +1,80 @@
+using Containers :: #import "riff"
+Lossless :: #import "authored_lossless"
+Frame :: #import "vframe"
+Alpha :: #import "alpha_plane"
+#import "std/vec"
+#import "std/image"
+#import "image_codec/buffer"
+
+#scope_file
+Prepare :: (input: BorrowedBytes, options: *DecodeOptions) -> WebpProbeResult {
+    error := ValidateOptions(options)
+    if error.code == DecodeOK && options.color_mode != StrictColor { error = Error(UnsupportedCapability) }
+    if error.code == DecodeOK { error = ValidateDecodedFrames(1, options.limits) }
+    if error.code != DecodeOK { result: WebpProbeResult; result.error = error; return result }
+    probe := WebpProbe(input, options.limits)
+    if probe.is_ok && probe.kind == WebpAnimation { probe.is_ok = false; probe.error = Error(UnsupportedCapability) }
+    return probe
+}
+DecodeLossyInto :: (probe: WebpProbeResult, output: OutputBuffer, options: *DecodeOptions) -> DecodeError {
+    frame := Frame.ReadVp8Frame(probe.payload, options, probe.payload_offset)
+    if frame.error.code != DecodeOK { return frame.error }
+    error := Frame.ConvertVp8Frame(*frame, output, options)
+    VecFree(frame.storage); unused ReleaseWorkingBytes(options.workers, frame.reserved_bytes)
+    if error.code != DecodeOK { return error }
+    if probe.alpha.data.count > 0 {
+        alpha := Alpha.ReadAlphaPlane(probe.alpha, probe.metadata.width, probe.metadata.height, options)
+        if alpha.error.code != DecodeOK { return alpha.error }
+        for y: 0..probe.metadata.height - 1 {
+            error = CancellationError(options.cancellation)
+            if error.code != DecodeOK { break }
+            for x: 0..probe.metadata.width - 1 { output.data[y * output.stride + x * 4 + 3] = alpha.plane.storage[cast(s64)y * probe.metadata.width + x] }
+        }
+        VecFree(alpha.plane.storage); unused ReleaseWorkingBytes(options.workers, alpha.reserved_bytes)
+    }
+    return error
+}
+Owned :: (probe: WebpProbeResult, options: *DecodeOptions) -> DecodeResult {
+    storage: Vec(u8)
+    count := cast(s64)probe.metadata.width * probe.metadata.height * 4
+    if !VecResizeBounded(storage, count, count) { return DecodeFailure(Error(AllocationFailed)) }
+    error: DecodeError
+    {
+        error = DecodeLossyInto(probe, OutputBuffer.{VecSlice(storage, 0, storage.count), cast(s64)probe.metadata.width * 4}, options)
+    }
+    if error.code != DecodeOK { return DecodeFailure(error) }
+    return DecodeResult.{true, Image.{probe.metadata.width, probe.metadata.height, storage}, probe.metadata, Error(DecodeOK)}
+}
+
+#scope_export
+// Authored strict still-image provider. VP8L and VP8(+ALPH) use Ziran only;
+// animation and unimplemented color modes fail explicitly. No native fallback.
+WebpAuthoredDecode :: (input: BorrowedBytes, options: DecodeOptions) -> DecodeResult {
+    probe := Prepare(input, *options)
+    if !probe.is_ok { return DecodeFailure(probe.error) }
+    if probe.kind == WebpLossless { return Lossless.WebpAuthoredLosslessDecode(input, options) }
+    local := NewWorkerBudget(options.limits)
+    if options.workers == null { options.workers = *local }
+    error := AcquireWorker(options.workers, options.cancellation)
+    if error.code != DecodeOK { return DecodeFailure(error) }
+    result := Owned(probe, *options)
+    unused ReleaseWorker(options.workers)
+    return result
+}
+WebpAuthoredDecodeInto :: (input: BorrowedBytes, output: OutputBuffer, options: DecodeOptions) -> WebpOutputResult {
+    result: WebpOutputResult
+    probe := Prepare(input, *options)
+    if !probe.is_ok { result.error = probe.error; return result }
+    if probe.kind == WebpLossless { return Lossless.WebpAuthoredLosslessDecodeInto(input, output, options) }
+    result.metadata = probe.metadata
+    result.error = ValidateOutput(output, probe.metadata.width, probe.metadata.height, options.limits)
+    if result.error.code != DecodeOK { return result }
+    local := NewWorkerBudget(options.limits)
+    if options.workers == null { options.workers = *local }
+    result.error = AcquireWorker(options.workers, options.cancellation)
+    if result.error.code != DecodeOK { return result }
+    result.error = DecodeLossyInto(probe, output, *options)
+    unused ReleaseWorker(options.workers)
+    result.is_ok = result.error.code == DecodeOK
+    return result
+}

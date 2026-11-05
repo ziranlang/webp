@@ -1,0 +1,34 @@
+#import "webp_private/facade"
+#import "webp_private/authored_lossless"
+#import "image_codec/benchmark"
+#import "std/image"
+#import "std/vec"
+#import "std/byte_text_linux"
+#program_export
+main :: (argc: s32, argv: **u8) -> s32 {
+    if argc != 3 { return 90 }
+    source := ReadBoundedFile(TextFromCString(argv[1]), 1048576, null)
+    expected := ReadBoundedFile(TextFromCString(argv[2]), 1048576, null)
+    if source.error.code != DecodeOK || expected.error.code != DecodeOK { return 91 }
+    bytes := source.data; golden := expected.data
+    if bytes.count < 26 || bytes[20] != 47 || (bytes[24] & cast(u8)16) == cast(u8)0 { return 92 }
+    bytes[24] &= cast(u8)239 // mutate only the in-memory copy, preserving original fixture
+    input := BorrowBytes(VecSlice(bytes, 0, bytes.count))
+    options := WebpDefaultOptions(); budget := NewWorkerBudget(options.limits); options.workers = *budget
+    probe := WebpProbe(input, options.limits)
+    if !probe.is_ok || probe.metadata.has_alpha { return 93 }
+    native := WebpDecode(input, options)
+    authored := WebpAuthoredLosslessDecode(input, options)
+    if !native.is_ok || !authored.is_ok || !native.metadata.has_alpha || !authored.metadata.has_alpha { return 94 }
+    if !SamePixels(*native.image, VecSlice(golden, 0, golden.count)) || !SamePixels(*authored.image, VecSlice(golden, 0, golden.count)) { return 95 }
+    output: Vec(u8); if !VecResizeBounded(output, golden.count, golden.count) { return 96 }
+    {
+        buffer := OutputBuffer.{VecSlice(output, 0, output.count), cast(s64)probe.metadata.width * 4}
+        into_native := WebpDecodeInto(input, buffer, options)
+        if !into_native.is_ok || !into_native.metadata.has_alpha { return 97 }
+        into_authored := WebpAuthoredLosslessDecodeInto(input, buffer, options)
+        if !into_authored.is_ok || !into_authored.metadata.has_alpha { return 98 }
+    }
+    for i: 0..golden.count - 1 { if output[i] != golden[i] { return 99 } }
+    return ifx budget.active_workers == 0 && budget.working_bytes == 0 then 0 else 100
+}

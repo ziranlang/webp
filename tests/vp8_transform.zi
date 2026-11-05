@@ -1,0 +1,42 @@
+#import "webp_private/vtransform"
+#program_export
+SelfTest :: () -> s32 {
+    input: [16]s16; plane: [1024]u8; dc: [16]s16
+    state: u32 = 305419896
+    for i: 0..15 { state = state * cast(u32)1664525 + cast(u32)1013904223; input[i] = cast(s16)(cast(s32)(state >> cast(u32)20) - 2048) }
+    for i: 0..1023 { state = state * cast(u32)1664525 + cast(u32)1013904223; plane[i] = cast(u8)(state >> cast(u32)24) }
+    if VInverseDCT(input[:], plane[33:], 32).code != DecodeOK || VInverseWHT(input[:], dc[:]).code != DecodeOK { return 1 }
+    hash: u64 = 14695981039346656037
+    for i: 0..1023 { hash = (hash ^ cast(u64)plane[i]) * cast(u64)1099511628211 }
+    for i: 0..15 {
+        word := cast(u16)dc[i]
+        hash = (hash ^ cast(u64)(word & cast(u16)255)) * cast(u64)1099511628211
+        hash = (hash ^ cast(u64)(word >> cast(u16)8)) * cast(u64)1099511628211
+    }
+    if hash != cast(u64)344720402081104100 { return 2 } // independent pinned oracle
+    if VInverseDCT(input[:15], plane[:], 32).code != TruncatedInput { return 3 }
+    if VInverseDCT(input[:], plane[:], 3).code != InvalidInput { return 4 }
+    if VInverseDCT(input[:], plane[:15], 4).code != OutputTooSmall { return 5 }
+    if VInverseWHT(input[:], dc[:15]).code != OutputTooSmall { return 6 }
+    extremes: [16]s16; white: [16]u8
+    extremes[0] = 32767
+    if VInverseDCT(extremes[:], white[:], 4).code != DecodeOK { return 7 }
+    for i: 0..15 { if white[i] != 255 { return 8 } }
+    extremes[0] = -32768
+    if VInverseDCT(extremes[:], white[:], 4).code != DecodeOK { return 9 }
+    for i: 0..15 { if white[i] != 0 { return 10 } }
+    range_coefficients: [16]s16 = .[-48,0,50,29000,0,0,25,25,0,0,0,0,-25,0,0,50]
+    for i: 0..15 { white[i] = 128 }
+    if VInverseDCT(range_coefficients[:], white[:], 4).code != DecodeOK { return 11 }
+    for i: 0..15 { if white[i] != (ifx (i % 4 & 1) == 0 then 255 else 0) { return 12 } }
+    narrowing: [16]s16; narrowing[0] = 32767; narrowing[8] = 32767
+    for i: 0..15 { white[i] = 128 }
+    if VInverseDCT(narrowing[:], white[:], 4).code != DecodeOK { return 13 }
+    for i: 0..15 { if white[i] != 128 { return 14 } }
+    walsh_narrowing: [16]s16; walsh_narrowing[0] = 32767; walsh_narrowing[12] = 32767
+    if VInverseWHT(walsh_narrowing[:], dc[:]).code != DecodeOK { return 15 }
+    for i: 0..15 { if dc[i] != 0 { return 16 } }
+    return 0
+}
+#program_export
+main :: () -> s32 { return SelfTest() }
