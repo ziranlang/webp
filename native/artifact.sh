@@ -9,7 +9,9 @@ mkdir -p "$root/build"
 if test "${WEBP_NATIVE_LOCK_HELD:-}" != "$root"; then
     exec flock "$root/build/native.lock" env WEBP_NATIVE_LOCK_HELD="$root" sh "$0" "$@"
 fi
-source=$(cd "$root" && "$toolchain/build/bin/ziran" pkg path libwebp --offline)
+# tests/common.sh resolves WEBP_SOURCE before the tests move to a private
+# package cache; native/build.sh checks the pin either way.
+source=${WEBP_SOURCE:-$(cd "$root" && "$toolchain/build/bin/ziran" pkg path libwebp --offline)}
 sh "$root/native/build.sh" "$source" >&2
 mkdir -p "$stage/lib" "$stage/resources"
 cp "$root/build/native/libimagewebp.a" "$stage/lib/libimagewebp.a"

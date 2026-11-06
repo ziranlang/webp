@@ -10,6 +10,10 @@ foundation=${IMAGE_CODEC_ROOT:-$root/../image-codec}
 ziran=${ZIRAN:-$toolchain/build/bin/ziran}
 zi2zx=${ZIRAN_ZX:-$(dirname -- "$ziran")/zi2zx}
 test -x "$ziran" && test -x "$zi2zx"
+# Locked sources resolve in the user's package cache, fetched there on first
+# use; the tests then keep their native, Go and artifact caches private.
+WEBP_SOURCE=${WEBP_SOURCE:-$(cd "$root" && "$ziran" pkg path libwebp)}
+export WEBP_SOURCE
 mkdir -p "$root/build/scratch/tmp" "$root/build/bin" "$root/build/cache"
 export TMPDIR="$root/build/scratch/tmp" XDG_CACHE_HOME="$root/build/cache" ZIRAN_NATIVE_CACHE="$root/build/cache/native"
 export GOMAXPROCS=2 GOTOOLCHAIN=local GOFLAGS=-p=2

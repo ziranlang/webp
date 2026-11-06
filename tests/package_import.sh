@@ -25,7 +25,7 @@ TOML
 cd "$out"
 "$ziran" lock --offline
 "$ziran" check
-if ! "$ziran" pkg artifact webp:libwebp --platform linux-x86_64-gnu --offline >"$out/descriptor-path" 2>"$out/artifact.log"; then tail -60 "$out/artifact.log" >&2; exit 1; fi
+if ! "$ziran" pkg artifact webp:libwebp --platform linux-x86_64-gnu >"$out/descriptor-path" 2>"$out/artifact.log"; then tail -60 "$out/artifact.log" >&2; exit 1; fi
 descriptor=$(cat "$out/descriptor-path")
 test -f "$descriptor"
 stage=$(dirname -- "$descriptor")
