@@ -124,12 +124,12 @@
     "tools/bench.zi": "9d3e1c26b60205d659a00b2956740ed9c977290363bd4393b83cbe6909bcfb75",
     "tools/oracle.zi": "7c37fed3bee5d7b33cdfeab2db61ec9cf6b4033f614b9c8bf9bf93117593e015",
     "tools/package_tool.zi": "3cedff208254531bb7949e239b8ffb8e6b36c272c7e988d9b080d4f7b74a3a39",
-    "ziran.toml": "dabdff390aadf6b4182dcf7fa7da18fd501a41dbdd9e11e6abda7b41df3492bd"
+    "ziran.toml": "1df88556cfb852a5c8e276724bd7bef31198c50c67ae643b379dae354287efe4"
   },
   "published": false,
   "pushed": false,
   "range_regression_manifest_sha256": "31ed039615cfe1ba5c276e5ec390956854ce540326e737c1242e36d85361ea3a",
-  "recorded_utc": "2026-11-05T04:35:53.682543+00:00",
+  "recorded_utc": "2026-11-06T06:25:07.157627+00:00",
   "remaining": [
     "authored animation intentionally unsupported",
     "facade default remains native until parent integration",
@@ -167,10 +167,10 @@
   ],
   "toolchain": {
     "binaries_sha256": {
-      "zi2zx-vm": "2c61e7f4467001a71f10931b258a8377c42240d52a98ef3a857c460ad0a8f255",
-      "ziran": "82f1ba66be1833c99ff5635f202ef2871acdd5e09379215f12924aee6091ca2f"
+      "zi2zx-vm": "515401bfb012da576f8702ce654dea48d375fedd3ffaff85ba4c801041630a91",
+      "ziran": "7412b9d41037d219cc386d1f6c54b93335d1b555de383b37321c9f571da9cd61"
     },
-    "git_head": "abb165ca8425337a21220c2538cd5ae9d041af9c",
+    "git_head": "33feafff5d1681902f8000672c9d4c9c2a3b4aa8",
     "has_uncommitted_tracked_changes": true,
     "version": "ziran 0.3.1"
   }
