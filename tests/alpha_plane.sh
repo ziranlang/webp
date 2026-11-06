@@ -10,7 +10,7 @@ for form in source saved; do
     set -- --root tests --module-path "webp_private=$root/src" --module-path "image_codec=$foundation/src" --module-path "std=$toolchain/std"
     if test "$form" = saved; then input="$out/ir/alpha_plane.zir"; set -- --root "$out/ir" --module-path "$out/ir"; fi
     "$ziran" bundle "$@" --entry alpha_plane:SelfTest -o "$out/$form.zx" "$input"
-    test "$("$run_vm" run "$out/$form.zx")" = 0
+    test "$("$zi2zx" run --vm "$out/$form.zx")" = 0
     "$ziran" build --target=c --exe --entry alpha_plane:main "$@" -o "$out/$form-c" "$input"
     "$out/$form-c/alpha_plane"
     "$ziran" build --target=go --pkg main "$@" -o "$out/$form-go" "$input"

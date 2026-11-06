@@ -17,7 +17,7 @@ for form in source saved; do
     set -- --root tests --module-path "webp_private=$root/src" --module-path "image_codec=$foundation/src" --module-path "std=$toolchain/std"
     if test "$form" = saved; then input="$out/ir/vp8_bits.zir"; set -- --root "$out/ir" --module-path "$out/ir"; fi
     "$ziran" bundle "$@" --entry vp8_bits:SelfTest -o "$out/$form.zx" "$input"
-    test "$("$run_vm" run "$out/$form.zx")" = 0
+    test "$("$zi2zx" run --vm "$out/$form.zx")" = 0
     "$ziran" build --target=c --exe --entry vp8_bits:main "$@" -o "$out/$form-c" "$input"
     "$out/$form-c/vp8_bits"
     "$ziran" build --target=go --pkg main "$@" -o "$out/$form-go" "$input"

@@ -8,8 +8,8 @@ root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 toolchain=${ZIRAN_ROOT:-$root/../../ziran}
 foundation=${IMAGE_CODEC_ROOT:-$root/../image-codec}
 ziran=${ZIRAN:-$toolchain/build/bin/ziran}
-run_vm=${ZIRAN_VM:-$(dirname -- "$ziran")/zi2zx-vm}
-test -x "$ziran" && test -x "$run_vm"
+zi2zx=${ZIRAN_ZX:-$(dirname -- "$ziran")/zi2zx}
+test -x "$ziran" && test -x "$zi2zx"
 mkdir -p "$root/build/scratch/tmp" "$root/build/bin" "$root/build/cache"
 export TMPDIR="$root/build/scratch/tmp" XDG_CACHE_HOME="$root/build/cache" ZIRAN_NATIVE_CACHE="$root/build/cache/native"
 export GOMAXPROCS=2 GOTOOLCHAIN=local GOFLAGS=-p=2

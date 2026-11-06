@@ -9,7 +9,7 @@ for form in source saved; do
     set -- --root tests --module-path "webp=$root/src" --module-path "image_codec=$foundation/src" --module-path "std=$toolchain/std"
     if test "$form" = saved; then input="$out/ir/riff.zir"; set -- --root "$out/ir" --module-path "$out/ir"; fi
     "$ziran" bundle "$@" --entry riff:SelfTest -o "$out/$form.zx" "$input"
-    test "$("$run_vm" run "$out/$form.zx")" = 0
+    test "$("$zi2zx" run --vm "$out/$form.zx")" = 0
     "$ziran" build --target=c --exe --entry riff:main "$@" -o "$out/$form-c" "$input"
     "$out/$form-c/riff"
     "$ziran" build --target=go --pkg main "$@" -o "$out/$form-go" "$input"

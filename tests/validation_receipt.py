@@ -9,7 +9,7 @@ import subprocess
 
 root = Path(__file__).resolve().parents[1]
 toolchain = Path(os.environ.get("ZIRAN_ROOT", str(root / "../../ziran")))
-binaries = {"ziran": Path(os.environ.get("ZIRAN", str(toolchain / "build/bin/ziran"))), "zi2zx-vm": Path(os.environ.get("ZIRAN_VM", str(toolchain / "build/bin/zi2zx-vm")))}
+binaries = {"ziran": Path(os.environ.get("ZIRAN", str(toolchain / "build/bin/ziran"))), "zi2zx": Path(os.environ.get("ZIRAN_ZX", str(toolchain / "build/bin/zi2zx")))}
 tests = "engine_contract riff legacy_compare dynamic_contract package_import authored_import lossless_bits lossless_transforms authored_lossless lossless_portable scratch_cap alpha alpha_plane alpha_hint vp8_bits vp8_header vp8_block vp8_transform vp8_predict vp8_filter vp8_color vp8_range authored authored_portable vp8_scratch_cap authored_sanitizers benchmark lossless_sanitizers".split()
 
 
