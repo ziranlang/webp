@@ -19,8 +19,8 @@ trace. The [API contract](docs/API.md) records ownership and capability limits.
 
 `webp/riff` is an allocation-free authored RIFF parser with explicit length,
 padding, image header, animation frame rectangle/count and metadata limits.
-It is independently executed from source and saved IR in C, Go and the direct
-portable VM. Header validation and pixel decoding have separate tests.
+It is independently executed from source and saved IR in C, Go and the
+engine. Header validation and pixel decoding have separate tests.
 
 `LibwebpCapabilities` truthfully reports caller-owned output, one execution lane
 and first-frame compatibility. Synchronous native calls cannot enforce an

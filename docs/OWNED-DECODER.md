@@ -50,7 +50,7 @@ build-queue -- sh tests/authored_import.sh
 
 The portable test builds streams algorithmically and compares their pixels
 with fingerprints of independently verified golden files. It executes source
-and saved IR through native C, Go and the direct portable VM. Sanitizer/mutation
+and saved IR through native C, Go and the engine. Sanitizer/mutation
 validation runs separately in `tests/lossless_sanitizers.sh`.
 
 `webp/authored` now connects the VP8 boolean reader and keyframe header,
