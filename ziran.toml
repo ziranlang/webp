@@ -3,12 +3,12 @@ name = "webp"
 module_roots = ["src"]
 
 [toolchain]
-git = "https://github.com/ziranlang/ziran.git"
-ref = "5fe70de6960b2fb8f01164c6643687adfba94156"
+git = "https://git.waozi.xyz/ziranlang/ziran.git"
+ref = "5db3d3c39425d5dfe4bfe4a84e6f6e2e5a810ad0"
 
 [dependencies.image_codec]
-git = "https://github.com/ziranlang/image-codec.git"
-ref = "360553150917f352e49e1beb78917370792ccaef"
+git = "https://git.waozi.xyz/ziranlang/image-codec.git"
+ref = "3017f0d1cc56975aa29c600a1f55a62e1193cf7b"
 
 [dependencies.libwebp]
 git = "https://github.com/webmproject/libwebp.git"
