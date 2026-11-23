@@ -31,3 +31,9 @@ project = "build/bin/package_tool"
 [artifacts.libwebp]
 inputs = ["tools/package_tool.zi", "native/artifact.sh", "native/build.sh", "native/CMakeLists.txt", "native/WebP.cmake", "Makefile"]
 outputs = ["lib/libimagewebp.a", "lib/libimagewebp.so", "resources/LICENSE-libwebp", "resources/PATENTS-libwebp"]
+
+[tool.android.native]
+cmake = "native/Android.cmake"
+
+[tool.android.native.modules]
+"src/libwebp.zi" = ["libwebp"]

@@ -3,7 +3,11 @@
 set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 source=${1:?provide pinned libwebp source package}
-test "$(git -C "$source" rev-parse HEAD)" = 1844042d1ca751e62e61df7617dba19c98588339
+pin=$(awk '
+    /^\[/ { selected = ($0 == "[dependencies.libwebp]") }
+    selected && /^ref[[:space:]]*=/ { split($0, fields, "\""); print fields[2]; exit }
+' "$root/ziran.toml")
+test -n "$pin" && test "$(git -C "$source" rev-parse HEAD)" = "$pin" || exit 1
 mkdir -p "$root/build/native"
 if test "${WEBP_NATIVE_LOCK_HELD:-}" != "$root"; then
     exec flock "$root/build/native.lock" env WEBP_NATIVE_LOCK_HELD="$root" sh "$0" "$@"
