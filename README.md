@@ -31,12 +31,12 @@ released before returning; native internal threads are disabled. No color
 management/HDR or encoding capability is exposed. The bridge rejects FastColor.
 
 ```sh
-build-queue -- sh tests/engine_contract.sh
-build-queue -- sh tests/riff.sh
-build-queue -- sh tests/legacy_compare.sh
-build-queue -- sh tests/dynamic_contract.sh
-build-queue -- sh tests/package_import.sh
-build-queue -- sh tests/all.sh
+sh tests/engine_contract.sh
+sh tests/riff.sh
+sh tests/legacy_compare.sh
+sh tests/dynamic_contract.sh
+sh tests/package_import.sh
+sh tests/all.sh
 ```
 
 Tests reuse the independently pinned mandatory image-codec corpus. Only the
@@ -46,7 +46,7 @@ The native tests use the existing pinned source package offline. Configure
 local `ziran` and `image_codec` overrides before locking during development;
 no bootstrap commit is needed. `WEBP_SOURCE` can select an existing source
 package with the exact declared revision. No native source is fetched during
-a build. All builds run through `build-queue`; no display is used.
+a build. No display is used.
 
 The validated native artifact platform is currently Linux x86-64 GNU. Consumers
 request `ziran pkg artifact webp:libwebp --platform linux-x86_64-gnu`, add the
@@ -64,7 +64,7 @@ actual execution are validated. The [authored implementation status](docs/OWNED-
 records completed pixel work and remaining acceptance gates. The stable bridge
 is not represented as a fully authored WebP decoder.
 
-`build-queue -- sh tests/benchmark.sh` builds the stable `build/bin/webp-bench`.
+`sh tests/benchmark.sh` builds the stable `build/bin/webp-bench`.
 It verifies exact golden pixels before timing real warm file reads and decode
 calls. It records actual samples and active workers; unavailable CPU, RSS,
 allocation and energy instruments remain null. `authored-vp8l` selects lossless
